@@ -1,4 +1,4 @@
-// Shared domain types for the AIGT HDR disbursement POS.
+// Shared domain types for the HDR disbursement POS.
 // These mirror the local-DB model in docs/ARCHITECTURE.md §3. For now they back
 // dummy data only — no SQLite, no adapter. Keep them stable so the eventual
 // MockAdapter / FrappeAdapter can serve the same shapes.

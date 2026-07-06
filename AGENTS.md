@@ -1,6 +1,6 @@
 # NPPOS — Non-Profit POS Mobile App
 
-Offline-first React Native (Expo) POS app for the **AIGT HDR disbursement system**. Field **agents** distribute goods (hampers), physical cash (via vouchers), and card-based cash to **beneficiaries**, and coordinate with **merchants**. The backend is **Frappe/ERPNext (already built, not in this repo)** — this app only talks to it over its REST API. **For now all data is dummy data** served through a swappable API adapter (see `src/services/api/`).
+Offline-first React Native (Expo) POS app for the **HDR disbursement system**. Field **agents** distribute goods (hampers), physical cash (via vouchers), and card-based cash to **beneficiaries**, and coordinate with **merchants**. The backend is **Frappe/ERPNext (already built, not in this repo)** — this app only talks to it over its REST API. **For now all data is dummy data** served through a swappable API adapter (see `src/services/api/`).
 
 Full architecture, diagrams, data model, and screen map: **`docs/ARCHITECTURE.md`** (read it before structural changes).
 
@@ -16,7 +16,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before 
 - **Redux Toolkit** (+ redux-persist) — **only** for session/auth, UI state, active POS flow state, and sync-engine status. Never mirror SQLite tables into Redux.
 - **Sync**: outbox pattern. Every local mutation = one SQLite transaction writing the domain row(s) **and** an `outbox` row with a client-generated UUID (idempotency key). A sync engine flushes the outbox when online and pulls assignments/reference data. See ARCHITECTURE.md §Sync.
 
-## Domain glossary (from the AIGT spec — use these exact terms)
+## Domain glossary (from the spec — use these exact terms)
 
 - **Beneficiary** — aid recipient, pre-registered and assigned to an agent (agents only ever see their own assigned list).
 - **Voucher** — transaction identifier for walk-in beneficiaries with no pre-record. Has validity period, project/disbursement-order link, and a **hard limit of 2 transactions per voucher**. Exact-match search by voucher no; searching by beneficiary no lists all their active vouchers.
@@ -49,6 +49,4 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before 
 
 ## Reference docs
 
-- Disbursement guide: https://aigt-staging.navari.co.ke/user-guide/disbursement/overview
 - POS flow diagram: `docs/pos_design.jpeg`
-- Requirements spec (Google Doc, "AIGT Jun 2026 – Goods Distribution & POS"): https://docs.google.com/document/d/14TRCUHt4-PYPn059kIOCGwaxzqXhS3QCyNP9fcjAUGc

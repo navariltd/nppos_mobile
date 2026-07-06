@@ -24,8 +24,8 @@ export const currentAgent: Agent = {
 };
 
 export const projects: Project[] = [
-	{ id: 'PRJ-2026-01', name: 'AIGT Jun 2026 — Food & Cash', code: 'AIGT-JUN26' },
-	{ id: 'PRJ-2026-02', name: 'AIGT Drought Response', code: 'AIGT-DR' },
+	{ id: 'PRJ-2026-01', name: 'HDR Jun 2026 — Food & Cash', code: 'HDR-JUN26' },
+	{ id: 'PRJ-2026-02', name: 'HDR Drought Response', code: 'HDR-DR' },
 ];
 
 export const disbursementOrders: DisbursementOrder[] = [

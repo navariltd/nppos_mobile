@@ -36,7 +36,7 @@ export default function Login() {
 						<Text variant="h2" className="border-0 pb-0">
 							NPPOS
 						</Text>
-						<Text className="text-muted-foreground">AIGT HDR Disbursement · Field POS</Text>
+						<Text className="text-muted-foreground">HDR Disbursement · Field POS</Text>
 					</View>
 				</View>
 

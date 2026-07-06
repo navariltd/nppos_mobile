@@ -1,6 +1,6 @@
 # NPPOS Architecture
 
-Offline-first POS app for AIGT HDR goods & cash disbursement. Backend = Frappe/ERPNext (exists already, out of scope). This document is the blueprint; `AGENTS.md` holds the condensed rules.
+Offline-first POS app for HDR goods & cash disbursement. Backend = Frappe/ERPNext (exists already, out of scope). This document is the blueprint; `AGENTS.md` holds the condensed rules.
 
 ## 1. System context
 

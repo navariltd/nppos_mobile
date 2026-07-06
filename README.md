@@ -1,6 +1,6 @@
 # NPPOS — Non-Profit POS
 
-Offline-first **React Native (Expo)** point-of-sale app for the **AIGT HDR disbursement system**. Field **agents** distribute goods (hampers), physical cash (via vouchers), and card-based cash to **beneficiaries**, and coordinate with **merchants**. The backend is **Frappe/ERPNext** (already built, out of this repo) — the app talks to it over REST.
+Offline-first **React Native (Expo)** point-of-sale app for the **HDR disbursement system**. Field **agents** distribute goods (hampers), physical cash (via vouchers), and card-based cash to **beneficiaries**, and coordinate with **merchants**. The backend is **Frappe/ERPNext** (already built, out of this repo) — the app talks to it over REST.
 
 > **Current state: UI/navigation prototype on dummy data.**
 > This build wires up every screen and the full navigation tree so you can feel the app end-to-end. There is **no SQLite, no Redux, and no sync engine yet** — all data is in-memory mock data served from [`src/data/mock.ts`](src/data/mock.ts). Those layers are designed in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and come next.
@@ -137,7 +137,6 @@ src/
 - **POS flow diagram:** `docs/pos_design.jpeg`
 - **Expo SDK 54 docs:** https://docs.expo.dev/versions/v54.0.0/
 - **react-native-reusables:** https://reactnativereusables.com/docs/components
-- **AIGT disbursement guide:** https://aigt-staging.navari.co.ke/user-guide/disbursement/overview
 
 ## Roadmap
 
