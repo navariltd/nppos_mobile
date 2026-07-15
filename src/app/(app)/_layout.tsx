@@ -1,4 +1,6 @@
 import { useSession } from '@/hooks/session';
+import { useThemeMode } from '@/hooks/theme';
+import { FONTS, THEME } from '@/lib/theme';
 import { Redirect, Stack } from 'expo-router';
 
 // Auth guard for the whole authenticated app. Flow routes (vouchers/goods/card/
@@ -6,13 +8,24 @@ import { Redirect, Stack } from 'expo-router';
 // tab bar — an agent mid-transaction can't accidentally switch tabs.
 export default function AppLayout() {
 	const { isAuthenticated } = useSession();
+	const { scheme } = useThemeMode();
+	const t = THEME[scheme];
 
 	if (!isAuthenticated) {
 		return <Redirect href="/login" />;
 	}
 
 	return (
-		<Stack screenOptions={{ headerShown: false }}>
+		<Stack
+			screenOptions={{
+				headerShown: false,
+				headerShadowVisible: false,
+				headerStyle: { backgroundColor: t.background },
+				headerTintColor: t.foreground,
+				headerTitleStyle: { fontFamily: FONTS.displaySemiBold, fontSize: 17 },
+				contentStyle: { backgroundColor: t.background },
+			}}
+		>
 			<Stack.Screen name="(tabs)" />
 			<Stack.Screen name="vouchers/index" options={{ headerShown: true, title: 'Cash Vouchers' }} />
 			<Stack.Screen name="vouchers/[voucherNo]" options={{ headerShown: true, title: 'Voucher' }} />
@@ -29,6 +42,10 @@ export default function AppLayout() {
 			<Stack.Screen
 				name="beneficiaries/[id]"
 				options={{ headerShown: true, title: 'Beneficiary' }}
+			/>
+			<Stack.Screen
+				name="transactions/[id]"
+				options={{ headerShown: true, title: 'Transaction' }}
 			/>
 			<Stack.Screen
 				name="reconciliation"

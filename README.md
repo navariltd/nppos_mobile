@@ -25,6 +25,7 @@ npm run web        # run in the browser
 **Signing in:** it's a dummy build — enter any Agent/Warehouse ID and **any PIN**. Toggle **Agent** vs **Admin** on the login screen to see the role-gated admin section.
 
 > **Heads-up:** after pulling changes that add or move routes/`_layout.tsx` files, Fast Refresh does **not** rebuild expo-router's route tree. Restart Metro with a clean cache:
+>
 > ```bash
 > npx expo start -c
 > ```
@@ -33,14 +34,14 @@ npm run web        # run in the browser
 
 ## Tech stack
 
-| Area | Choice |
-|---|---|
-| Framework | **Expo SDK 54** (New Architecture, React 19, RN 0.81) |
-| Routing | **expo-router v6** (file-based, `src/app/`) |
-| Styling | **NativeWind 4** (Tailwind for RN) |
+| Area          | Choice                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------ |
+| Framework     | **Expo SDK 54** (New Architecture, React 19, RN 0.81)                                            |
+| Routing       | **expo-router v6** (file-based, `src/app/`)                                                      |
+| Styling       | **NativeWind 4** (Tailwind for RN)                                                               |
 | UI primitives | **react-native-reusables** (cva + `tailwind-merge`) in [`src/components/ui/`](src/components/ui) |
-| Icons | `@expo/vector-icons` (Material Icons) |
-| Language | TypeScript (strict) |
+| Icons         | `@expo/vector-icons` (Material Icons)                                                            |
+| Language      | TypeScript (strict)                                                                              |
 
 **Planned (not in this build):** expo-sqlite + Drizzle ORM (source of truth for domain data), Redux Toolkit + redux-persist (session/UI/flow/sync state only), and an outbox-based sync engine against a swappable `ApiAdapter` (`MockAdapter` → `FrappeAdapter`). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -60,7 +61,7 @@ npm run web        # run in the browser
 ## Roles
 
 - **Agent** (primary) — POS dashboard, goods issue, cash via voucher, card withdrawal, own stock, own transactions, end-of-day reconciliation.
-- **Admin** — everything agents see, plus oversight: agents' progress, DO summaries, reports. Gated in [`src/app/(app)/admin/`](src/app/(app)/admin).
+- **Admin** — everything agents see, plus oversight: agents' progress, DO summaries, reports. Gated in [`src/app/(app)/admin/`](<src/app/(app)/admin>).
 
 ---
 
@@ -136,7 +137,7 @@ src/
 - **Agent/contributor rules:** [`AGENTS.md`](AGENTS.md)
 - **POS flow diagram:** `docs/pos_design.jpeg`
 - **Expo SDK 54 docs:** https://docs.expo.dev/versions/v54.0.0/
-- **react-native-reusables:** https://reactnativereusables.com/docs/components
+- **react-native-reusables:** https://reactnativereusables.com/docs
 
 ## Roadmap
 
@@ -147,5 +148,6 @@ src/
 - [ ] Outbox sync engine + `MockAdapter`
 - [ ] `FrappeAdapter` against ERPNext REST
 - [ ] Dev-client build (QR voucher scanning, receipt printing, SQLCipher)
-</content>
+  </content>
+
 </invoke>

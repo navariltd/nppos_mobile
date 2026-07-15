@@ -1,8 +1,8 @@
 import { SyncStatusPill } from '@/components/domain/SyncStatusPill';
-import { Screen } from '@/components/domain/Screen';
-import { ActionTile, Stat } from '@/components/domain/widgets';
+import { ActionTile, ListRow, SectionLabel, Stat } from '@/components/domain/widgets';
 import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Icon } from '@/components/ui/icon';
+import { Progress } from '@/components/ui/progress';
 import { Text } from '@/components/ui/text';
 import {
 	agentStock,
@@ -13,12 +13,27 @@ import {
 } from '@/data/mock';
 import { useOnline } from '@/hooks/online';
 import { useSession } from '@/hooks/session';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useIsFocused } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { Pressable, View } from 'react-native';
+import {
+	Banknote,
+	ChevronRight,
+	CircleAlert,
+	ClipboardCheck,
+	CreditCard,
+	Gift,
+	RefreshCw,
+	ShieldCheck,
+} from 'lucide-react-native';
+import { Pressable, ScrollView, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function Dashboard() {
 	const router = useRouter();
+	const insets = useSafeAreaInsets();
+	const isFocused = useIsFocused();
 	const { isOnline } = useOnline();
 	const { role } = useSession();
 	const conflicts = conflictCount();
@@ -29,123 +44,140 @@ export default function Dashboard() {
 	const issuedToday = agentStock.reduce((sum, s) => sum + s.issuedToday, 0);
 
 	return (
-		<Screen edges={['top']}>
-			{/* Header */}
-			<View className="flex-row items-start justify-between">
-				<View>
-					<Text className="text-muted-foreground text-sm">Welcome back</Text>
-					<Text variant="h3">{currentAgent.name}</Text>
-					<Text className="text-muted-foreground text-xs">{currentAgent.region}</Text>
+		<View className="bg-background flex-1">
+			{isFocused && <StatusBar style="light" />}
+			<ScrollView contentContainerClassName="pb-12" showsVerticalScrollIndicator={false}>
+				{/* Evergreen canopy header */}
+				<View
+					className="bg-primary rounded-b-[28px] px-5 pb-16"
+					style={{ paddingTop: insets.top + 16 }}
+				>
+					<View className="flex-row items-start justify-between">
+						<View>
+							<Text className="text-primary-foreground/70 text-sm">Welcome back</Text>
+							<Text className="text-primary-foreground font-display text-2xl">
+								{currentAgent.name}
+							</Text>
+							<Text className="text-primary-foreground/60 mt-0.5 text-xs">
+								{currentAgent.code} · {currentAgent.region}
+							</Text>
+						</View>
+						<SyncStatusPill onDark />
+					</View>
 				</View>
-				<SyncStatusPill />
-			</View>
 
-			{/* Needs-review banner */}
-			{conflicts > 0 && (
-				<Pressable onPress={() => router.push('/transactions')}>
-					<View className="flex-row items-center gap-2 rounded-lg bg-red-50 px-3 py-2.5">
-						<MaterialIcons name="error-outline" size={18} color="#b91c1c" />
-						<Text className="flex-1 text-sm text-red-700">
-							{conflicts} transaction{conflicts > 1 ? 's' : ''} need review
-						</Text>
-						<MaterialIcons name="chevron-right" size={18} color="#b91c1c" />
-					</View>
-				</Pressable>
-			)}
-
-			{/* DO progress */}
-			<Card>
-				<CardContent className="gap-3 pt-6">
-					<View className="flex-row items-center justify-between">
-						<Text className="font-medium">{primaryDO.name}</Text>
-						<Text className="text-muted-foreground text-sm">{progress}%</Text>
-					</View>
-					<View className="bg-muted h-2 overflow-hidden rounded-full">
-						<View className="bg-primary h-full rounded-full" style={{ width: `${progress}%` }} />
-					</View>
-					<View className="flex-row">
-						<Stat label="Issued" value={String(primaryDO.issuedCount)} />
-						<Stat label="Target" value={String(primaryDO.totalBeneficiaries)} />
-						<Stat label="Today" value={String(issuedToday)} />
-					</View>
-				</CardContent>
-			</Card>
-
-			{/* Action hub */}
-			<Text className="mt-1 font-semibold">Distribute</Text>
-			<View className="gap-3">
-				<View className="flex-row gap-3">
-					<ActionTile
-						icon="local-atm"
-						label="Cash Vouchers"
-						sublabel="Search & issue"
-						tint="#0f766e"
-						onPress={() => router.push('/vouchers')}
-					/>
-					<ActionTile
-						icon="redeem"
-						label="Goods / Hampers"
-						sublabel="Issue to beneficiary"
-						tint="#b45309"
-						onPress={() => router.push('/goods')}
-					/>
-				</View>
-				<View className="flex-row gap-3">
-					<ActionTile
-						icon="credit-card"
-						label="ATM / Bank Card"
-						sublabel={isOnline ? 'Online withdrawal' : 'Offline — unavailable'}
-						tint="#1d4ed8"
-						disabled={!isOnline}
-						onPress={() => router.push('/card')}
-					/>
-					<ActionTile
-						icon="fact-check"
-						label="Reconcile"
-						sublabel="End of day"
-						tint="#6d28d9"
-						onPress={() => router.push('/reconciliation')}
-					/>
-				</View>
-			</View>
-
-			{/* Pending sync note */}
-			<Card>
-				<CardContent className="flex-row items-center gap-3 py-4">
-					<MaterialIcons name="sync" size={20} color="#71717a" />
-					<View className="flex-1">
-						<Text className="text-sm font-medium">
-							{pending > 0 ? `${pending} pending sync` : 'All synced'}
-						</Text>
-						<Text className="text-muted-foreground text-xs">
-							{isOnline ? 'Syncing in background' : 'Will sync when back online'}
-						</Text>
-					</View>
-					<Pressable onPress={() => router.push('/transactions')}>
-						<Text className="text-primary text-sm font-medium">View</Text>
-					</Pressable>
-				</CardContent>
-			</Card>
-
-			{role === 'admin' && (
-				<>
-					<Separator />
-					<Pressable onPress={() => router.push('/admin')}>
-						<Card>
-							<CardContent className="flex-row items-center gap-3 py-4">
-								<MaterialIcons name="admin-panel-settings" size={22} color="#0f172a" />
-								<View className="flex-1">
-									<Text className="font-medium">Admin oversight</Text>
-									<Text className="text-muted-foreground text-xs">
-										Agents progress · DO summaries · reports
+				{/* Content overlaps the canopy */}
+				<View className="-mt-12 gap-4 px-4">
+					{/* Today's DO progress */}
+					<Animated.View entering={FadeInDown.duration(350)}>
+						<Card className="shadow-md shadow-black/10">
+							<CardContent className="gap-4 pt-5">
+								<View className="flex-row items-center justify-between">
+									<Text className="flex-1 font-medium" numberOfLines={1}>
+										{primaryDO.name}
 									</Text>
+									<Text className="font-display text-primary text-lg">{progress}%</Text>
 								</View>
-								<MaterialIcons name="chevron-right" size={22} color="#a1a1aa" />
+								<Progress value={progress} indicatorClassName="bg-primary" />
+								<View className="flex-row">
+									<Stat label="Issued" value={String(primaryDO.issuedCount)} />
+									<Stat label="Target" value={String(primaryDO.totalBeneficiaries)} />
+									<Stat label="Today" value={String(issuedToday)} />
+								</View>
 							</CardContent>
 						</Card>
-					</Pressable>
-				</>
-			)}
-		</Screen>
+					</Animated.View>
+
+					{/* Needs-review banner */}
+					{conflicts > 0 && (
+						<Animated.View entering={FadeInDown.duration(350).delay(60)}>
+							<Pressable
+								onPress={() => router.push('/transactions')}
+								className="bg-destructive/10 flex-row items-center gap-2.5 rounded-xl px-4 py-3 active:opacity-70"
+							>
+								<Icon as={CircleAlert} size={18} className="text-destructive" />
+								<Text className="text-destructive flex-1 text-sm font-medium">
+									{conflicts} transaction{conflicts > 1 ? 's' : ''} need review
+								</Text>
+								<Icon as={ChevronRight} size={18} className="text-destructive" />
+							</Pressable>
+						</Animated.View>
+					)}
+
+					{/* Action hub */}
+					<Animated.View entering={FadeInDown.duration(350).delay(120)} className="gap-3">
+						<SectionLabel>Distribute</SectionLabel>
+						<View className="flex-row gap-3">
+							<ActionTile
+								icon={Banknote}
+								label="Cash Vouchers"
+								sublabel="Search & issue"
+								className="bg-primary/10"
+								iconClassName="text-primary"
+								onPress={() => router.push('/vouchers')}
+							/>
+							<ActionTile
+								icon={Gift}
+								label="Goods / Hampers"
+								sublabel="Issue to beneficiary"
+								className="bg-warning/15"
+								iconClassName="text-warning"
+								onPress={() => router.push('/goods')}
+							/>
+						</View>
+						<View className="flex-row gap-3">
+							<ActionTile
+								icon={CreditCard}
+								label="ATM / Bank Card"
+								sublabel={isOnline ? 'Online withdrawal' : 'Offline — unavailable'}
+								className="bg-info/10"
+								iconClassName="text-info"
+								disabled={!isOnline}
+								onPress={() => router.push('/card')}
+							/>
+							<ActionTile
+								icon={ClipboardCheck}
+								label="Reconcile"
+								sublabel="End of day"
+								className="bg-accent"
+								iconClassName="text-accent-foreground"
+								onPress={() => router.push('/reconciliation')}
+							/>
+						</View>
+					</Animated.View>
+
+					{/* Sync + admin */}
+					<Animated.View entering={FadeInDown.duration(350).delay(180)} className="gap-4">
+						<Card className="overflow-hidden py-0">
+							<ListRow
+								title={pending > 0 ? `${pending} pending sync` : 'All synced'}
+								subtitle={isOnline ? 'Syncing in background' : 'Will sync when back online'}
+								onPress={() => router.push('/transactions')}
+								leading={
+									<View className="bg-warning/15 h-10 w-10 items-center justify-center rounded-xl">
+										<Icon as={RefreshCw} size={18} className="text-warning" />
+									</View>
+								}
+							/>
+						</Card>
+
+						{role === 'admin' && (
+							<Card className="overflow-hidden py-0">
+								<ListRow
+									title="Admin oversight"
+									subtitle="Agents progress · DO summaries · reports"
+									onPress={() => router.push('/admin')}
+									leading={
+										<View className="bg-primary/10 h-10 w-10 items-center justify-center rounded-xl">
+											<Icon as={ShieldCheck} size={18} className="text-primary" />
+										</View>
+									}
+								/>
+							</Card>
+						)}
+					</Animated.View>
+				</View>
+			</ScrollView>
+		</View>
 	);
 }

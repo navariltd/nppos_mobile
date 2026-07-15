@@ -1,16 +1,21 @@
 import { Screen } from '@/components/domain/Screen';
-import { Stat } from '@/components/domain/widgets';
+import { EmptyState, Stat } from '@/components/domain/widgets';
+import { Alert as AlertBanner, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useOnline } from '@/hooks/online';
 import { formatKES } from '@/lib/format';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
+import { ArrowDown, CircleCheck, CloudOff, Wifi } from 'lucide-react-native';
 import * as React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function CardValidate() {
 	const router = useRouter();
@@ -26,16 +31,13 @@ export default function CardValidate() {
 	if (!isOnline) {
 		return (
 			<Screen>
-				<View className="flex-1 items-center justify-center gap-4 py-20">
-					<View className="bg-muted h-20 w-20 items-center justify-center rounded-full">
-						<MaterialIcons name="cloud-off" size={40} color="#a1a1aa" />
-					</View>
-					<Text variant="h4">Offline — card flow unavailable</Text>
-					<Text className="text-muted-foreground text-center">
-						The ATM / bank card flow talks to the bank in real time and can’t run offline.
-						Reconnect to validate a card and withdraw.
-					</Text>
-					<Button variant="outline" onPress={() => router.back()}>
+				<View className="flex-1 justify-center">
+					<EmptyState
+						icon={CloudOff}
+						title="Offline — card flow unavailable"
+						subtitle="The ATM / bank card flow talks to the bank in real time and can't run offline. Reconnect to validate a card and withdraw."
+					/>
+					<Button variant="outline" className="self-center" onPress={() => router.back()}>
 						<Text>Go back</Text>
 					</Button>
 				</View>
@@ -45,56 +47,86 @@ export default function CardValidate() {
 
 	return (
 		<Screen>
-			<View className="flex-row items-center gap-2 rounded-lg bg-blue-50 px-3 py-2.5">
-				<MaterialIcons name="wifi" size={18} color="#1d4ed8" />
-				<Text className="flex-1 text-sm text-blue-700">
-					Online-only flow. Balances are fetched live from the bank.
-				</Text>
-			</View>
+			<Animated.View entering={FadeInDown.duration(300)}>
+				<AlertBanner icon={Wifi} className="border-info/30 bg-info/10">
+					<AlertTitle className="text-info">Online-only flow</AlertTitle>
+					<AlertDescription className="text-info">
+						Balances are fetched live from the bank.
+					</AlertDescription>
+				</AlertBanner>
+			</Animated.View>
 
-			<Card>
-				<CardContent className="gap-4 pt-6">
-					<View className="gap-1.5">
-						<Text className="text-sm font-medium">Card number</Text>
-						<Input
-							value={card}
-							onChangeText={(t) => {
-								setCard(t);
-								setState('idle');
-							}}
-							placeholder="•••• •••• •••• ••••"
-							keyboardType="number-pad"
-							maxLength={19}
-						/>
-					</View>
-					<Button onPress={validate} disabled={card.length < 4 || state === 'loading'}>
-						{state === 'loading' ? (
-							<ActivityIndicator color="#fff" />
-						) : (
-							<Text>Validate card</Text>
-						)}
-					</Button>
-				</CardContent>
-			</Card>
-
-			{state === 'valid' && (
+			<Animated.View entering={FadeInDown.duration(300).delay(70)}>
 				<Card>
-					<CardContent className="gap-3 pt-6">
-						<View className="flex-row items-center gap-2">
-							<MaterialIcons name="check-circle" size={18} color="#059669" />
-							<Text className="font-medium">Card valid · Fatuma Ali</Text>
+					<CardContent className="gap-4 pt-5">
+						<View className="gap-2">
+							<Label nativeID="cardNo">Card number</Label>
+							<Input
+								aria-labelledby="cardNo"
+								value={card}
+								onChangeText={(t) => {
+									setCard(t);
+									setState('idle');
+								}}
+								placeholder="•••• •••• •••• ••••"
+								keyboardType="number-pad"
+								maxLength={19}
+								className="font-display-medium h-12 rounded-xl tracking-[2px]"
+							/>
 						</View>
-						<Separator />
-						<View className="flex-row">
-							<Stat label="Available balance" value={formatKES(5000)} />
-							<Stat label="Entitlement" value={formatKES(5000)} />
-						</View>
-						<Button onPress={() => router.push('/card/withdraw')}>
-							<MaterialIcons name="south" size={18} color="#fff" />
-							<Text>Initiate withdrawal</Text>
+						<Button
+							size="lg"
+							onPress={validate}
+							disabled={card.length < 4 || state === 'loading'}
+						>
+							<Text>{state === 'loading' ? 'Contacting bank…' : 'Validate card'}</Text>
 						</Button>
 					</CardContent>
 				</Card>
+			</Animated.View>
+
+			{state === 'loading' && (
+				<Animated.View entering={FadeInDown.duration(250)}>
+					<Card>
+						<CardContent className="gap-3 pt-5">
+							<Skeleton className="h-5 w-44" />
+							<Separator />
+							<View className="flex-row gap-6">
+								<View className="flex-1 gap-2">
+									<Skeleton className="h-7 w-24" />
+									<Skeleton className="h-3 w-28" />
+								</View>
+								<View className="flex-1 gap-2">
+									<Skeleton className="h-7 w-24" />
+									<Skeleton className="h-3 w-20" />
+								</View>
+							</View>
+							<Skeleton className="h-11 w-full rounded-md" />
+						</CardContent>
+					</Card>
+				</Animated.View>
+			)}
+
+			{state === 'valid' && (
+				<Animated.View entering={FadeInDown.duration(300)}>
+					<Card className="border-success/30">
+						<CardContent className="gap-4 pt-5">
+							<View className="flex-row items-center gap-2">
+								<Icon as={CircleCheck} size={18} className="text-success" />
+								<Text className="font-display-semibold text-base">Card valid · Fatuma Ali</Text>
+							</View>
+							<Separator />
+							<View className="flex-row">
+								<Stat label="Available balance" value={formatKES(5000)} />
+								<Stat label="Entitlement" value={formatKES(5000)} />
+							</View>
+							<Button size="lg" onPress={() => router.push('/card/withdraw')}>
+								<Icon as={ArrowDown} size={18} className="text-primary-foreground" />
+								<Text>Initiate withdrawal</Text>
+							</Button>
+						</CardContent>
+					</Card>
+				</Animated.View>
 			)}
 		</Screen>
 	);

@@ -1,40 +1,122 @@
+import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { conflictCount, pendingCount } from '@/data/mock';
 import { useOnline } from '@/hooks/online';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { cn } from '@/lib/utils';
+import { CircleAlert, RefreshCw, Wifi, WifiOff } from 'lucide-react-native';
+import * as React from 'react';
 import { View } from 'react-native';
+import Animated, {
+	cancelAnimation,
+	Easing,
+	useAnimatedStyle,
+	useSharedValue,
+	withRepeat,
+	withTiming,
+} from 'react-native-reanimated';
 
 // Compact online/offline + pending-outbox indicator for screen headers.
-export function SyncStatusPill() {
+// `onDark` renders it for the evergreen canopy header.
+export function SyncStatusPill({ onDark = false }: { onDark?: boolean }) {
 	const { isOnline } = useOnline();
 	const pending = pendingCount();
 	const conflicts = conflictCount();
+	const syncing = isOnline && pending > 0;
+
+	const rotation = useSharedValue(0);
+	React.useEffect(() => {
+		if (syncing) {
+			rotation.value = withRepeat(
+				withTiming(360, { duration: 1400, easing: Easing.linear }),
+				-1,
+			);
+		} else {
+			cancelAnimation(rotation);
+			rotation.value = 0;
+		}
+	}, [syncing, rotation]);
+	const spin = useAnimatedStyle(() => ({
+		transform: [{ rotate: `${rotation.value}deg` }],
+	}));
+
+	const pillBase = 'flex-row items-center gap-1.5 rounded-full px-2.5 py-1.5';
+
 	return (
-		<View className="flex-row items-center gap-2">
+		<View className="flex-row items-center gap-1.5">
 			<View
-				className={`flex-row items-center gap-1 rounded-full px-2 py-1 ${
-					isOnline ? 'bg-emerald-100' : 'bg-muted'
-				}`}
+				className={cn(
+					pillBase,
+					isOnline
+						? onDark
+							? 'bg-white/15'
+							: 'bg-success/10'
+						: onDark
+							? 'bg-white/10'
+							: 'bg-muted',
+				)}
 			>
-				<MaterialIcons
-					name={isOnline ? 'cloud-done' : 'cloud-off'}
-					size={14}
-					color={isOnline ? '#047857' : '#71717a'}
+				<Icon
+					as={isOnline ? Wifi : WifiOff}
+					size={13}
+					className={cn(
+						isOnline
+							? onDark
+								? 'text-primary-foreground'
+								: 'text-success'
+							: onDark
+								? 'text-primary-foreground/70'
+								: 'text-muted-foreground',
+					)}
 				/>
-				<Text className={`text-xs font-medium ${isOnline ? 'text-emerald-700' : 'text-muted-foreground'}`}>
+				<Text
+					className={cn(
+						'text-xs font-medium',
+						isOnline
+							? onDark
+								? 'text-primary-foreground'
+								: 'text-success'
+							: onDark
+								? 'text-primary-foreground/70'
+								: 'text-muted-foreground',
+					)}
+				>
 					{isOnline ? 'Online' : 'Offline'}
 				</Text>
 			</View>
+
 			{pending > 0 && (
-				<View className="flex-row items-center gap-1 rounded-full bg-amber-100 px-2 py-1">
-					<MaterialIcons name="sync" size={14} color="#b45309" />
-					<Text className="text-xs font-medium text-amber-700">{pending}</Text>
+				<View className={cn(pillBase, onDark ? 'bg-white/15' : 'bg-warning/15')}>
+					<Icon
+						as={RefreshCw}
+						size={13}
+						className={onDark ? 'text-primary-foreground' : 'text-warning'}
+					/>
+					<Text
+						className={cn(
+							'text-xs font-medium',
+							onDark ? 'text-primary-foreground' : 'text-warning',
+						)}
+					>
+						{pending}
+					</Text>
 				</View>
 			)}
+
 			{conflicts > 0 && (
-				<View className="flex-row items-center gap-1 rounded-full bg-red-100 px-2 py-1">
-					<MaterialIcons name="error-outline" size={14} color="#b91c1c" />
-					<Text className="text-xs font-medium text-red-700">{conflicts}</Text>
+				<View className={cn(pillBase, onDark ? 'bg-white/15' : 'bg-destructive/10')}>
+					<Icon
+						as={CircleAlert}
+						size={13}
+						className={onDark ? 'text-primary-foreground' : 'text-destructive'}
+					/>
+					<Text
+						className={cn(
+							'text-xs font-medium',
+							onDark ? 'text-primary-foreground' : 'text-destructive',
+						)}
+					>
+						{conflicts}
+					</Text>
 				</View>
 			)}
 		</View>

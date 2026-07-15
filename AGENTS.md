@@ -11,7 +11,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before 
 ## Tech stack (decided — do not swap without discussion)
 
 - **Expo SDK 54** (New Architecture, React 19, RN 0.81), **expo-router v6** file-based routing, `src/app/` directory.
-- **NativeWind 4** + [react-native-reusables-style](https://reactnativereusables.com/docs/components) UI primitives in `src/components/ui/` (cva + tailwind-merge; see `components.json`).
+- **NativeWind 4** + [react-native-reusables-style](https://reactnativereusables.com/docs) UI primitives in `src/components/ui/` (cva + tailwind-merge; see `components.json`).
 - **expo-sqlite + Drizzle ORM** — local DB is the **source of truth for all domain data** (beneficiaries, vouchers, entitlements, stock, transactions). Use `drizzle-orm/expo-sqlite` `useLiveQuery` for reactive reads (requires `enableChangeListener: true`).
 - **Redux Toolkit** (+ redux-persist) — **only** for session/auth, UI state, active POS flow state, and sync-engine status. Never mirror SQLite tables into Redux.
 - **Sync**: outbox pattern. Every local mutation = one SQLite transaction writing the domain row(s) **and** an `outbox` row with a client-generated UUID (idempotency key). A sync engine flushes the outbox when online and pulls assignments/reference data. See ARCHITECTURE.md §Sync.

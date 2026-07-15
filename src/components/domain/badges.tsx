@@ -12,16 +12,12 @@ const SYNC_LABEL: Record<SyncStatus, string> = {
 export function SyncBadge({ status }: { status: SyncStatus }) {
 	const cls =
 		status === 'synced'
-			? 'bg-emerald-100'
+			? 'bg-success/10'
 			: status === 'pending'
-				? 'bg-amber-100'
-				: 'bg-red-100';
+				? 'bg-warning/15'
+				: 'bg-destructive/10';
 	const textCls =
-		status === 'synced'
-			? 'text-emerald-700'
-			: status === 'pending'
-				? 'text-amber-700'
-				: 'text-red-700';
+		status === 'synced' ? 'text-success' : status === 'pending' ? 'text-warning' : 'text-destructive';
 	return (
 		<Badge className={cls}>
 			<Text className={textCls}>{SYNC_LABEL[status]}</Text>
@@ -31,8 +27,8 @@ export function SyncBadge({ status }: { status: SyncStatus }) {
 
 export function VoucherStatusBadge({ status }: { status: VoucherStatus }) {
 	const map: Record<VoucherStatus, { cls: string; text: string; label: string }> = {
-		active: { cls: 'bg-emerald-100', text: 'text-emerald-700', label: 'Active' },
-		expired: { cls: 'bg-red-100', text: 'text-red-700', label: 'Expired' },
+		active: { cls: 'bg-success/10', text: 'text-success', label: 'Active' },
+		expired: { cls: 'bg-destructive/10', text: 'text-destructive', label: 'Expired' },
 		exhausted: { cls: 'bg-muted', text: 'text-muted-foreground', label: 'Exhausted' },
 	};
 	const m = map[status];

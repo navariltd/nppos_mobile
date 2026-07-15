@@ -43,3 +43,5 @@ yarn-error.*
 # agents
 .vscode
 .claude
+
+assets/screenshots

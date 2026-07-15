@@ -1,26 +1,58 @@
 import { VoucherStatusBadge } from '@/components/domain/badges';
 import { EntitlementCard } from '@/components/domain/EntitlementCard';
 import { Screen } from '@/components/domain/Screen';
-import { EmptyState, Stat } from '@/components/domain/widgets';
+import { EmptyState, SectionLabel, Stat } from '@/components/domain/widgets';
+import {
+	AlertDialog,
+	AlertDialogAction,
+	AlertDialogCancel,
+	AlertDialogContent,
+	AlertDialogDescription,
+	AlertDialogFooter,
+	AlertDialogHeader,
+	AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Alert as AlertBanner, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
+import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { getEntitlementsForVoucher, getProject, getVoucherByNo } from '@/data/mock';
 import { formatDate, formatKES } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import type { Entitlement } from '@/types/domain';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { CalendarDays, FolderOpen, Info, SearchX } from 'lucide-react-native';
+import * as React from 'react';
 import { Alert, View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+
+// The 2-use hard limit, made visible: one dot per allowed use.
+function UseDots({ used, max }: { used: number; max: number }) {
+	return (
+		<View className="flex-row items-center gap-1.5">
+			{Array.from({ length: max }).map((_, i) => (
+				<View
+					key={i}
+					className={cn(
+						'h-3 w-3 rounded-full',
+						i < used ? 'bg-primary' : 'border-border bg-muted border',
+					)}
+				/>
+			))}
+		</View>
+	);
+}
 
 export default function VoucherDetail() {
 	const { voucherNo } = useLocalSearchParams<{ voucherNo: string }>();
 	const router = useRouter();
 	const voucher = getVoucherByNo(voucherNo);
+	const [confirmCash, setConfirmCash] = React.useState<Entitlement | null>(null);
 
 	if (!voucher) {
 		return (
 			<Screen>
-				<EmptyState icon="search-off" title="Voucher not found" subtitle={voucherNo} />
+				<EmptyState icon={SearchX} title="Voucher not found" subtitle={voucherNo} />
 			</Screen>
 		);
 	}
@@ -34,81 +66,116 @@ export default function VoucherDetail() {
 		if (e.type === 'hamper') {
 			router.push(`/goods/issue/${e.id}`);
 		} else {
-			Alert.alert(
-				'Issue cash',
-				`Record a Payment Entry of ${formatKES(e.amount)} against ${voucher.voucherNo}?`,
-				[
-					{ text: 'Cancel', style: 'cancel' },
-					{
-						text: 'Confirm',
-						onPress: () =>
-							Alert.alert('Recorded', 'Cash payout queued for sync (dummy).', [
-								{ text: 'Done', onPress: () => router.back() },
-							]),
-					},
-				]
-			);
+			setConfirmCash(e);
 		}
 	};
 
 	return (
 		<Screen>
-			<Card>
-				<CardContent className="gap-3 pt-6">
-					<View className="flex-row items-center justify-between">
-						<View>
-							<Text variant="h4">{voucher.voucherNo}</Text>
-							{voucher.beneficiaryNo && (
-								<Text className="text-muted-foreground text-sm">{voucher.beneficiaryNo}</Text>
-							)}
+			{/* Voucher ticket */}
+			<Animated.View entering={FadeInDown.duration(320)}>
+				<Card className="overflow-hidden">
+					<CardContent className="gap-4 pt-5">
+						<View className="flex-row items-start justify-between">
+							<View>
+								<Text className="font-display text-xl tracking-tight">{voucher.voucherNo}</Text>
+								{voucher.beneficiaryNo && (
+									<Text className="text-muted-foreground mt-0.5 text-sm">
+										{voucher.beneficiaryNo}
+									</Text>
+								)}
+							</View>
+							<VoucherStatusBadge status={voucher.status} />
 						</View>
-						<VoucherStatusBadge status={voucher.status} />
-					</View>
-					<Separator />
-					<View className="flex-row">
-						<Stat label="Amount" value={formatKES(voucher.amount)} />
-						<Stat label="Uses left" value={`${usesLeft}/${voucher.maxUses}`} />
-					</View>
-					<View className="flex-row items-center gap-2">
-						<MaterialIcons name="event" size={16} color="#71717a" />
-						<Text className="text-muted-foreground text-sm">
-							Valid {formatDate(voucher.validFrom)} → {formatDate(voucher.validTo)}
-						</Text>
-					</View>
-					<View className="flex-row items-center gap-2">
-						<MaterialIcons name="folder-open" size={16} color="#71717a" />
-						<Text className="text-muted-foreground text-sm">{project?.name}</Text>
-					</View>
-				</CardContent>
-			</Card>
+
+						{/* Ticket perforation */}
+						<View className="border-border border-t border-dashed" />
+
+						<View className="flex-row items-center">
+							<Stat label="Amount" value={formatKES(voucher.amount)} />
+							<View className="flex-1 gap-1.5">
+								<UseDots used={voucher.usesCount} max={voucher.maxUses} />
+								<Text className="text-muted-foreground text-[11px] uppercase tracking-wider">
+									{usesLeft} of {voucher.maxUses} uses left
+								</Text>
+							</View>
+						</View>
+
+						<View className="gap-2">
+							<View className="flex-row items-center gap-2">
+								<Icon as={CalendarDays} size={15} className="text-muted-foreground" />
+								<Text className="text-muted-foreground text-sm">
+									Valid {formatDate(voucher.validFrom)} → {formatDate(voucher.validTo)}
+								</Text>
+							</View>
+							<View className="flex-row items-center gap-2">
+								<Icon as={FolderOpen} size={15} className="text-muted-foreground" />
+								<Text className="text-muted-foreground text-sm">{project?.name}</Text>
+							</View>
+						</View>
+					</CardContent>
+				</Card>
+			</Animated.View>
 
 			{!canIssue && (
-				<View className="flex-row items-center gap-2 rounded-lg bg-amber-50 px-3 py-2.5">
-					<MaterialIcons name="info-outline" size={18} color="#b45309" />
-					<Text className="flex-1 text-sm text-amber-700">
-						{voucher.status === 'exhausted'
-							? 'Voucher has reached its 2-use limit.'
-							: voucher.status === 'expired'
-								? 'Voucher is outside its validity window.'
-								: 'This voucher cannot be issued.'}
-					</Text>
-				</View>
+				<Animated.View entering={FadeInDown.duration(320).delay(60)}>
+					<AlertBanner icon={Info} className="border-warning/40 bg-warning/10">
+						<AlertTitle className="text-warning">Cannot issue</AlertTitle>
+						<AlertDescription className="text-warning">
+							{voucher.status === 'exhausted'
+								? 'Voucher has reached its 2-use limit.'
+								: voucher.status === 'expired'
+									? 'Voucher is outside its validity window.'
+									: 'This voucher cannot be issued.'}
+						</AlertDescription>
+					</AlertBanner>
+				</Animated.View>
 			)}
 
-			<Text className="mt-1 font-semibold">Entitlements</Text>
+			<SectionLabel>Entitlements</SectionLabel>
 			{ents.length === 0 ? (
-				<EmptyState icon="inbox" title="No entitlements" />
+				<EmptyState title="No entitlements" />
 			) : (
-				ents.map((e) => (
-					<EntitlementCard
-						key={e.id}
-						entitlement={e}
-						actionLabel={e.type === 'hamper' ? 'Issue hamper' : 'Issue cash'}
-						onAction={() => issue(e)}
-						disabled={!canIssue}
-					/>
+				ents.map((e, i) => (
+					<Animated.View key={e.id} entering={FadeInDown.duration(320).delay(120 + i * 70)}>
+						<EntitlementCard
+							entitlement={e}
+							actionLabel={e.type === 'hamper' ? 'Issue hamper' : 'Issue cash'}
+							onAction={() => issue(e)}
+							disabled={!canIssue}
+						/>
+					</Animated.View>
 				))
 			)}
+
+			{/* Cash payout confirmation */}
+			<AlertDialog open={confirmCash !== null} onOpenChange={(open) => !open && setConfirmCash(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Issue cash</AlertDialogTitle>
+						<AlertDialogDescription>
+							Record a Payment Entry of {formatKES(confirmCash?.amount)} against{' '}
+							{voucher.voucherNo}? This uses 1 of the voucher's {voucher.maxUses} allowed
+							transactions.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>
+							<Text>Cancel</Text>
+						</AlertDialogCancel>
+						<AlertDialogAction
+							onPress={() => {
+								setConfirmCash(null);
+								Alert.alert('Recorded', 'Cash payout queued for sync (dummy).', [
+									{ text: 'Done', onPress: () => router.back() },
+								]);
+							}}
+						>
+							<Text>Confirm</Text>
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</Screen>
 	);
 }

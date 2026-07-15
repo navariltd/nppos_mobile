@@ -3,15 +3,17 @@ import { EmptyState, ListRow } from '@/components/domain/widgets';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { beneficiaries, getEntitlementsForBeneficiary, getHamper } from '@/data/mock';
 import { initials } from '@/lib/format';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
+import { Gift, Search, Ticket } from 'lucide-react-native';
 import * as React from 'react';
 import { View } from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function GoodsPicker() {
 	const router = useRouter();
@@ -21,7 +23,7 @@ export default function GoodsPicker() {
 	const rows = beneficiaries
 		.map((b) => {
 			const hamperEnt = getEntitlementsForBeneficiary(b.id).find(
-				(e) => e.type === 'hamper' && e.status === 'available'
+				(e) => e.type === 'hamper' && e.status === 'available',
 			);
 			return hamperEnt ? { b, ent: hamperEnt } : null;
 		})
@@ -42,44 +44,53 @@ export default function GoodsPicker() {
 			</Text>
 
 			<Button variant="outline" onPress={() => router.push('/vouchers')}>
-				<MaterialIcons name="local-atm" size={18} color="#0f172a" />
+				<Icon as={Ticket} size={18} className="text-primary" />
 				<Text>Use a voucher instead</Text>
 			</Button>
 
 			<View className="relative justify-center">
 				<View className="absolute left-3 z-10">
-					<MaterialIcons name="search" size={18} color="#a1a1aa" />
+					<Icon as={Search} size={18} className="text-muted-foreground" />
 				</View>
 				<Input
 					value={q}
 					onChangeText={setQ}
 					placeholder="Search beneficiary"
-					className="pl-9"
+					className="h-12 rounded-xl pl-10"
 				/>
 			</View>
 
 			<Card className="flex-1 overflow-hidden py-0">
 				{rows.length === 0 ? (
-					<EmptyState icon="redeem" title="No pending hampers" subtitle="Everyone assigned has been issued" />
+					<EmptyState
+						icon={Gift}
+						title="No pending hampers"
+						subtitle="Everyone assigned has been issued"
+					/>
 				) : (
 					rows.map(({ b, ent }, i) => {
 						const hamper = getHamper(ent.hamperId);
 						return (
-							<View key={b.id}>
+							<Animated.View
+								key={b.id}
+								entering={FadeInDown.duration(280).delay(Math.min(i * 50, 350))}
+							>
 								{i > 0 && <Separator />}
 								<ListRow
 									title={b.name}
 									subtitle={`${b.beneficiaryNo} · ${hamper?.name ?? 'Hamper'}`}
 									onPress={() => router.push(`/goods/issue/${ent.id}`)}
 									leading={
-										<Avatar alt={b.name} className="h-10 w-10">
-											<AvatarFallback>
-												<Text className="text-sm font-medium">{initials(b.name)}</Text>
+										<Avatar alt={b.name} className="bg-secondary h-11 w-11">
+											<AvatarFallback className="bg-secondary">
+												<Text className="text-secondary-foreground font-display-medium text-sm">
+													{initials(b.name)}
+												</Text>
 											</AvatarFallback>
 										</Avatar>
 									}
 								/>
-							</View>
+							</Animated.View>
 						);
 					})
 				)}

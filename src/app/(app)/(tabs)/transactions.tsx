@@ -4,11 +4,14 @@ import { EmptyState } from '@/components/domain/widgets';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { transactions } from '@/data/mock';
-import { cn } from '@/lib/utils';
 import type { SyncStatus } from '@/types/domain';
+import { useRouter } from 'expo-router';
+import { ReceiptText } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
+import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 
 type Filter = 'all' | SyncStatus;
 
@@ -20,6 +23,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 ];
 
 export default function Transactions() {
+	const router = useRouter();
 	const [filter, setFilter] = React.useState<Filter>('all');
 	const list = transactions.filter((t) => filter === 'all' || t.status === filter);
 
@@ -27,46 +31,60 @@ export default function Transactions() {
 		<Screen edges={['top']} scroll={false}>
 			<View>
 				<Text variant="h3">Activity</Text>
-				<Text className="text-muted-foreground text-sm">History · pending sync · conflicts</Text>
+				<Text className="text-muted-foreground mt-0.5 text-sm">
+					History · pending sync · conflicts
+				</Text>
 			</View>
 
-			<View className="flex-row gap-2">
-				{FILTERS.map((f) => {
-					const active = filter === f.key;
-					return (
-						<Pressable
-							key={f.key}
-							onPress={() => setFilter(f.key)}
-							className={cn(
-								'rounded-full border px-3 py-1.5',
-								active ? 'bg-primary border-primary' : 'border-border bg-background'
-							)}
-						>
-							<Text
-								className={cn(
-									'text-xs font-medium',
-									active ? 'text-primary-foreground' : 'text-muted-foreground'
-								)}
-							>
-								{f.label}
-							</Text>
-						</Pressable>
-					);
-				})}
-			</View>
+			<ToggleGroup
+				type="single"
+				value={filter}
+				onValueChange={(v) => setFilter((v as Filter) ?? 'all')}
+				className="justify-start gap-2"
+			>
+				{FILTERS.map((f) => (
+					<ToggleGroupItem
+						key={f.key}
+						value={f.key}
+						className="border-border bg-card h-9 rounded-full border px-3.5"
+					>
+						<Text className="text-xs font-medium">{f.label}</Text>
+					</ToggleGroupItem>
+				))}
+			</ToggleGroup>
 
-			<Card className="flex-1 overflow-hidden py-0">
-				{list.length === 0 ? (
-					<EmptyState icon="receipt-long" title="Nothing here" subtitle="No transactions match this filter" />
-				) : (
-					list.map((t, i) => (
-						<View key={t.id}>
-							{i > 0 && <Separator />}
-							<TransactionRow txn={t} />
-						</View>
-					))
-				)}
-			</Card>
+			{list.length === 0 ? (
+				<Card className="py-0">
+					<EmptyState
+						icon={ReceiptText}
+						title="Nothing here"
+						subtitle="No transactions match this filter"
+					/>
+				</Card>
+			) : (
+				<ScrollView
+					className="flex-1"
+					contentContainerClassName="pb-8"
+					showsVerticalScrollIndicator={false}
+				>
+					<Animated.View layout={LinearTransition.duration(200)}>
+						<Card className="overflow-hidden py-0">
+							{list.map((t, i) => (
+								<Animated.View
+									key={t.id}
+									entering={FadeInDown.duration(260).delay(Math.min(i * 40, 320))}
+								>
+									{i > 0 && <Separator />}
+									<TransactionRow
+										txn={t}
+										onPress={() => router.push(`/transactions/${t.id}`)}
+									/>
+								</Animated.View>
+							))}
+						</Card>
+					</Animated.View>
+				</ScrollView>
+			)}
 		</Screen>
 	);
 }
