@@ -5,15 +5,19 @@ import type {
 	beneficiaries,
 	disbursementOrders,
 	entitlements,
+	posSessions,
 	posTransactions,
+	voucherRedemptions,
 	vouchers,
 } from '@/db/schema';
 import type {
 	Beneficiary,
 	DisbursementOrder,
 	Entitlement,
+	PosSession,
 	PosTransaction,
 	Voucher,
+	VoucherRedemption,
 } from '@/types/domain';
 
 export function toBeneficiary(r: typeof beneficiaries.$inferSelect): Beneficiary {
@@ -73,11 +77,40 @@ export function toTransaction(r: typeof posTransactions.$inferSelect): PosTransa
 		beneficiaryName: r.beneficiaryName ?? undefined,
 		voucherNo: r.voucherNo ?? undefined,
 		entitlementId: r.entitlementId ?? undefined,
+		posSessionId: r.posSessionId ?? undefined,
 		projectId: r.projectId,
 		disbursementOrderId: r.disbursementOrderId,
 		status: r.status,
 		createdAt: r.createdAt,
 		serverName: r.serverName ?? undefined,
+	};
+}
+
+export function toPosSession(r: typeof posSessions.$inferSelect): PosSession {
+	return {
+		id: r.id,
+		posProfileId: r.posProfileId,
+		status: r.status,
+		openedAt: r.openedAt,
+		closedAt: r.closedAt ?? undefined,
+		openingFloat: r.openingFloat,
+		expectedCash: r.expectedCash ?? undefined,
+		countedCash: r.countedCash ?? undefined,
+	};
+}
+
+export function toVoucherRedemption(
+	r: typeof voucherRedemptions.$inferSelect,
+): VoucherRedemption {
+	return {
+		id: r.id,
+		voucherId: r.voucherId,
+		entitlementId: r.entitlementId,
+		transactionId: r.transactionId,
+		type: r.type,
+		amount: r.amount ?? undefined,
+		qty: r.qty ?? undefined,
+		redeemedAt: r.redeemedAt,
 	};
 }
 

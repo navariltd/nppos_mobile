@@ -70,7 +70,7 @@ export const vouchers = sqliteTable(
 		amount: real('amount').notNull().default(0),
 		validFrom: text('valid_from').notNull(),
 		validTo: text('valid_to').notNull(),
-		status: text('status', { enum: ['active', 'expired', 'exhausted'] })
+		status: text('status', { enum: ['active', 'partially_redeemed', 'redeemed', 'expired'] })
 			.notNull()
 			.default('active'),
 		usesCount: integer('uses_count').notNull().default(0),
@@ -138,6 +138,58 @@ export const agentStock = sqliteTable('agent_stock', {
 	damaged: integer('damaged').notNull().default(0),
 });
 
+// Agent's POS configuration — maps to ERPNext POS Profile (pulled).
+export const posProfiles = sqliteTable('pos_profiles', {
+	id: text('id').primaryKey(),
+	name: text('name').notNull(),
+	agentId: text('agent_id').notNull(),
+	warehouse: text('warehouse').notNull(),
+	currency: text('currency').notNull().default('KES'),
+});
+
+// A working shift: opened before issuing, closed at end of day. Maps to a
+// POS Opening Entry on open and a POS Closing Entry on close (both via outbox).
+export const posSessions = sqliteTable(
+	'pos_sessions',
+	{
+		id: text('id').primaryKey(), // client UUID
+		posProfileId: text('pos_profile_id')
+			.notNull()
+			.references(() => posProfiles.id),
+		status: text('status', { enum: ['open', 'closed'] }).notNull().default('open'),
+		openedAt: text('opened_at').notNull(),
+		closedAt: text('closed_at'),
+		openingFloat: real('opening_float').notNull().default(0),
+		// filled at close: expected = openingFloat + session cash payouts
+		expectedCash: real('expected_cash'),
+		countedCash: real('counted_cash'),
+		openingServerName: text('opening_server_name'), // POS Opening Entry name
+		closingServerName: text('closing_server_name'), // POS Closing Entry name
+	},
+	(t) => [index('pos_sessions_status_idx').on(t.status)],
+);
+
+// One row per voucher use — maps to the backend's Entitlement Redemption.
+export const voucherRedemptions = sqliteTable(
+	'voucher_redemptions',
+	{
+		id: text('id').primaryKey(), // client UUID
+		voucherId: text('voucher_id')
+			.notNull()
+			.references(() => vouchers.id),
+		entitlementId: text('entitlement_id')
+			.notNull()
+			.references(() => entitlements.id),
+		transactionId: text('transaction_id').notNull(), // pos_transactions.id
+		posSessionId: text('pos_session_id'),
+		type: text('type', { enum: ['cash', 'hamper'] }).notNull(),
+		amount: real('amount'),
+		qty: real('qty'),
+		redeemedAt: text('redeemed_at').notNull(),
+	},
+	(t) => [index('voucher_redemptions_voucher_idx').on(t.voucherId)],
+);
+
 // Local-first. id is a client UUID and never changes (ARCHITECTURE.md §4).
 export const posTransactions = sqliteTable(
 	'pos_transactions',
@@ -154,6 +206,7 @@ export const posTransactions = sqliteTable(
 		beneficiaryName: text('beneficiary_name'),
 		voucherNo: text('voucher_no'),
 		entitlementId: text('entitlement_id'),
+		posSessionId: text('pos_session_id'),
 		projectId: text('project_id').notNull(),
 		disbursementOrderId: text('disbursement_order_id').notNull(),
 		status: text('status', { enum: ['pending', 'synced', 'conflict'] })

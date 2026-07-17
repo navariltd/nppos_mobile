@@ -23,6 +23,14 @@ export function formatDate(iso?: string) {
 	});
 }
 
+export function formatTime(iso?: string) {
+	if (!iso) return '—';
+	return new Date(iso).toLocaleTimeString('en-KE', {
+		hour: '2-digit',
+		minute: '2-digit',
+	});
+}
+
 export function initials(name: string) {
 	return name
 		.split(' ')

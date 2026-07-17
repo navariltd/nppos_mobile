@@ -10,8 +10,11 @@ import {
 	entitlements,
 	hamperItems,
 	hampers,
+	posProfiles,
+	posSessions,
 	posTransactions,
 	projects,
+	voucherRedemptions,
 	vouchers,
 } from '@/db/schema';
 import type {
@@ -20,20 +23,25 @@ import type {
 	DisbursementOrder,
 	Entitlement,
 	Hamper,
+	PosProfile,
+	PosSession,
 	PosTransaction,
 	Project,
 	SyncStatus,
 	Voucher,
+	VoucherRedemption,
 } from '@/types/domain';
-import { desc, eq, like, or } from 'drizzle-orm';
+import { and, desc, eq, like, or } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
 import {
 	toBeneficiary,
 	toDisbursementOrder,
 	toEntitlement,
+	toPosSession,
 	toTransaction,
 	toVoucher,
+	toVoucherRedemption,
 } from './mappers';
 
 // Sentinel for "no id yet" params so hooks can run unconditionally.
@@ -247,6 +255,59 @@ export function useSyncCounts(): { pending: number; conflicts: number } {
 		pending: rows.filter((r) => r.status === 'pending').length,
 		conflicts: rows.filter((r) => r.status === 'conflict').length,
 	};
+}
+
+// ---- POS profile & sessions --------------------------------------------------
+
+export function usePosProfile(): PosProfile | undefined {
+	const { data } = useLiveQuery(db.select().from(posProfiles).limit(1));
+	return data?.[0];
+}
+
+// The one session currently open (at most one at a time — enforced on open).
+export function useOpenPosSession(): PosSession | undefined {
+	const { data } = useLiveQuery(
+		db.select().from(posSessions).where(eq(posSessions.status, 'open')),
+	);
+	return data?.[0] ? toPosSession(data[0]) : undefined;
+}
+
+export function usePosSessions(): PosSession[] {
+	const { data } = useLiveQuery(
+		db.select().from(posSessions).orderBy(desc(posSessions.openedAt)),
+	);
+	return (data ?? []).map(toPosSession);
+}
+
+// Cash paid out within one session — reconciliation's expected-cash basis.
+export function useSessionCashTotal(sessionId?: string): number {
+	const { data } = useLiveQuery(
+		db
+			.select({ amount: posTransactions.amount })
+			.from(posTransactions)
+			.where(
+				and(
+					eq(posTransactions.posSessionId, sessionId ?? NONE),
+					eq(posTransactions.type, 'cash_payment'),
+				),
+			),
+		[sessionId],
+	);
+	return (data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0);
+}
+
+// ---- voucher redemptions --------------------------------------------------------
+
+export function useRedemptionsForVoucher(voucherId?: string): VoucherRedemption[] {
+	const { data } = useLiveQuery(
+		db
+			.select()
+			.from(voucherRedemptions)
+			.where(eq(voucherRedemptions.voucherId, voucherId ?? NONE))
+			.orderBy(desc(voucherRedemptions.redeemedAt)),
+		[voucherId],
+	);
+	return (data ?? []).map(toVoucherRedemption);
 }
 
 // Cash payments still unsynced today, grouped for the reconciliation screen.

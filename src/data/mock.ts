@@ -249,7 +249,7 @@ export const vouchers: Voucher[] = [
 		amount: 6000,
 		validFrom: '2026-07-01',
 		validTo: '2026-07-31',
-		status: 'exhausted',
+		status: 'redeemed',
 		usesCount: 2,
 		maxUses: 2,
 		projectId: 'PRJ-2026-01',

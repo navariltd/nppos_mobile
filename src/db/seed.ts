@@ -14,6 +14,7 @@ import {
 	hamperItems,
 	hampers,
 	outbox as outboxTable,
+	posProfiles,
 	posTransactions,
 	projects,
 	vouchers,
@@ -37,6 +38,17 @@ export function seedIfEmpty(): void {
 					issuedCount: d.issuedCount,
 				})),
 			)
+			.run();
+
+		// The agent's POS configuration (backend: ERPNext POS Profile).
+		tx.insert(posProfiles)
+			.values({
+				id: 'POSP-001',
+				name: `Agent POS · ${mock.currentAgent.code}`,
+				agentId: mock.currentAgent.id,
+				warehouse: mock.currentAgent.code,
+				currency: 'KES',
+			})
 			.run();
 
 		// mock.ts has no assignments export; beneficiaries point at ASG-01

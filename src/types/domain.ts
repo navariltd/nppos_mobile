@@ -15,7 +15,7 @@ export type TransactionType =
 
 export type SyncStatus = 'pending' | 'synced' | 'conflict';
 
-export type VoucherStatus = 'active' | 'expired' | 'exhausted';
+export type VoucherStatus = 'active' | 'partially_redeemed' | 'redeemed' | 'expired';
 
 export interface Project {
 	id: string;
@@ -96,6 +96,39 @@ export interface Entitlement {
 	disbursementOrderId: string;
 }
 
+export interface PosProfile {
+	id: string;
+	name: string;
+	agentId: string;
+	warehouse: string;
+	currency: string;
+}
+
+// A working shift. Opens as a POS Opening Entry and closes as a POS Closing
+// Entry on the backend.
+export interface PosSession {
+	id: string;
+	posProfileId: string;
+	status: 'open' | 'closed';
+	openedAt: string;
+	closedAt?: string;
+	openingFloat: number;
+	expectedCash?: number;
+	countedCash?: number;
+}
+
+// One voucher use — mirrors the backend's Entitlement Redemption.
+export interface VoucherRedemption {
+	id: string;
+	voucherId: string;
+	entitlementId: string;
+	transactionId: string;
+	type: 'cash' | 'hamper';
+	amount?: number;
+	qty?: number;
+	redeemedAt: string;
+}
+
 export interface AgentStockRow {
 	hamperId: string;
 	hamperName: string;
@@ -115,6 +148,7 @@ export interface PosTransaction {
 	beneficiaryName?: string;
 	voucherNo?: string;
 	entitlementId?: string;
+	posSessionId?: string;
 	projectId: string;
 	disbursementOrderId: string;
 	status: SyncStatus;
