@@ -2,8 +2,8 @@
 
 Offline-first **React Native (Expo)** point-of-sale app for the **HDR disbursement system**. Field **agents** distribute goods (hampers), physical cash (via vouchers), and card-based cash to **beneficiaries**, and coordinate with **merchants**. The backend is **Frappe/ERPNext** (already built, out of this repo) — the app talks to it over REST.
 
-> **Current state: UI/navigation prototype on dummy data.**
-> This build wires up every screen and the full navigation tree so you can feel the app end-to-end. There is **no SQLite, no Redux, and no sync engine yet** — all data is in-memory mock data served from [`src/data/mock.ts`](src/data/mock.ts). Those layers are designed in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and come next.
+> **Current state: full offline data layer on seeded dummy data.**
+> Every screen reads reactively from **expo-sqlite via Drizzle** (`useLiveQuery`), and every POS action(cash payout, hamper issue, card withdrawal, stock return/damage, voucher redemption, POS session open/close) is a real local DB transaction paired with an outbox row. [`src/data/mock.ts`](src/data/mock.ts) now only feeds the one-time seed. **No sync engine yet** - the outbox queues everything and a dev-only "Sync now" stub simulates a flush. Sync + the `FrappeAdapter` come next; the backend mapping is already documented in [`docs/FRAPPE_BACKEND.md`](docs/FRAPPE_BACKEND.md) and [`docs/NPPOS_WEB.md`](docs/NPPOS_WEB.md).
 
 ---
 
@@ -24,6 +24,8 @@ npm run web        # run in the browser
 
 **Signing in:** it's a dummy build — enter any Agent/Warehouse ID and **any PIN**. Toggle **Agent** vs **Admin** on the login screen to see the role-gated admin section.
 
+**Seeding:** on first launch the app runs migrations and seeds SQLite from `src/data/mock.ts` (once, only when the DB is empty). Delete the app from the device/simulator to reseed from scratch. To actually issue anything you must first **open a POS session** from the dashboard (enter an opening cash float) — closing it happens on the Reconciliation screen.
+
 > **Heads-up:** after pulling changes that add or move routes/`_layout.tsx` files, Fast Refresh does **not** rebuild expo-router's route tree. Restart Metro with a clean cache:
 >
 > ```bash
@@ -38,19 +40,38 @@ npm run web        # run in the browser
 | ------------- | ------------------------------------------------------------------------------------------------ |
 | Framework     | **Expo SDK 54** (New Architecture, React 19, RN 0.81)                                            |
 | Routing       | **expo-router v6** (file-based, `src/app/`)                                                      |
+| Database      | **expo-sqlite + Drizzle ORM** — local source of truth, reactive reads via `useLiveQuery`         |
 | Styling       | **NativeWind 4** (Tailwind for RN)                                                               |
 | UI primitives | **react-native-reusables** (cva + `tailwind-merge`) in [`src/components/ui/`](src/components/ui) |
 | Icons         | `@expo/vector-icons` (Material Icons)                                                            |
 | Language      | TypeScript (strict)                                                                              |
 
-**Planned (not in this build):** expo-sqlite + Drizzle ORM (source of truth for domain data), Redux Toolkit + redux-persist (session/UI/flow/sync state only), and an outbox-based sync engine against a swappable `ApiAdapter` (`MockAdapter` → `FrappeAdapter`). See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+**Planned (not in this build):** Redux Toolkit + redux-persist (session/UI/flow/sync state only), and the outbox-flushing sync engine against a swappable `ApiAdapter` (`MockAdapter` → `FrappeAdapter`). The outbox itself is already written on every mutation. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+---
+
+## Browsing the on-device database (Drizzle Studio)
+
+The dev build ships with [`expo-drizzle-studio-plugin`](https://www.npmjs.com/package/expo-drizzle-studio-plugin), which bridges the **live SQLite database on the connected phone/simulator** to Drizzle Studio in your browser — real tables, real rows, updating as you use the app.
+
+1. Start the dev server (`npm start`) and open the app on the device — the bridge lives inside the running app.
+2. In the terminal running Expo, press **`shift + m`** (more tools).
+3. Select **`expo-drizzle-studio-plugin`** — Studio opens in a browser tab against the device's DB.
+
+Issue an entitlement in the app and watch the row land in `pos_transactions` (plus its `outbox` twin); open/close a session and check `pos_sessions` and `voucher_redemptions`.
+
+> Note: `npx drizzle-kit studio` does **not** work here — the DB file lives inside the app sandbox on the device, unreachable from your machine. Always go through `shift + m`.
+
+<!-- TODO(@emiliocliff): add screenshot -->
+<!-- ![Drizzle Studio browsing the on-device NPPOS database](docs/drizzle-studio.png) -->
+
 
 ---
 
 ## Domain glossary
 
 - **Beneficiary** — pre-registered aid recipient assigned to an agent (agents only see their own list).
-- **Voucher** — transaction identifier for walk-ins with no pre-record; has a validity window and a **hard limit of 2 uses**. Voucher-no search is exact-match; beneficiary-no search lists that beneficiary's active vouchers.
+- **Voucher** — transaction identifier for walk-ins with no pre-record; carries **one entitlement** (cash amount *or* a hamper, mirroring the backend's Entitlement Voucher), a validity window, and a **hard limit of 2 uses** (local rule). Voucher-no search is exact-match; beneficiary-no search lists that beneficiary's vouchers.
 - **Entitlement** — what a beneficiary/voucher is allocated: a hamper, a cash amount, or card cash.
 - **Hamper / BOM** — a finished good (e.g. "Food Basket A") composed of stock items (rice, oil, salt…).
 - **Disbursement Order (DO)** — backend document driving per-agent assignments.
@@ -106,17 +127,19 @@ src/app/
 
 ```
 src/
-├── app/                # routes only (thin screens, compose from components + mock data)
+├── app/                # routes only (thin screens, compose from components + repositories)
 ├── components/
 │   ├── ui/             # react-native-reusables primitives (button, text, card, input, badge, avatar, separator)
-│   └── domain/         # Screen, SyncStatusPill, EntitlementCard, TransactionRow, badges, widgets
-├── data/mock.ts        # all dummy data + selector helpers (the temporary "backend")
+│   └── domain/         # Screen, SyncStatusPill, PosSessionCard, EntitlementCard, TransactionRow, badges, widgets
+├── db/                 # Drizzle schema, client (openDatabaseSync + change listener), migrations, seed, DbProvider
+├── repositories/       # the ONLY module touching db/ — useLiveQuery read hooks + transactional mutations
+├── data/mock.ts        # dummy fixtures — consumed by the seed (and currentAgent/agentsOverview for now)
 ├── hooks/              # session (dummy auth/role) + online (connectivity flag) contexts
-├── lib/                # cn() utils, theme tokens, formatters
+├── lib/                # cn() utils, theme tokens, formatters, uuid
 └── types/domain.ts     # shared domain types (stable — future adapters serve these shapes)
 ```
 
-**Dependency direction (target):** `app → components/hooks → repositories → db`, with the sync engine driving `repositories + services/api`. Screens never import Drizzle or an API adapter directly. Today the repositories/db/sync layers are stubbed by `src/data/mock.ts`; the type shapes in `src/types/domain.ts` are kept stable so nothing above the data layer changes when the real DB and adapters land.
+**Dependency direction:** `app → components/hooks → repositories → db`, with the future sync engine driving `repositories + services/api`. Screens never import Drizzle or an API adapter directly — reads go through the hooks in `src/repositories/queries.ts`, writes through `src/repositories/mutations.ts` (each mutation = one SQLite transaction writing domain rows **plus an outbox row** keyed by a client UUID).
 
 ---
 
@@ -134,6 +157,8 @@ src/
 ## Docs & references
 
 - **Architecture (read before structural changes):** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- **Frappe backend (aigt_hdr) distilled — doctypes, cash/goods pipelines:** [`docs/FRAPPE_BACKEND.md`](docs/FRAPPE_BACKEND.md)
+- **nppos web-POS app — Entitlement Voucher/Redemption, POS Profile wiring:** [`docs/NPPOS_WEB.md`](docs/NPPOS_WEB.md)
 - **Agent/contributor rules:** [`AGENTS.md`](AGENTS.md)
 - **POS flow diagram:** `docs/pos_design.jpeg`
 - **Expo SDK 54 docs:** https://docs.expo.dev/versions/v54.0.0/
@@ -142,12 +167,10 @@ src/
 ## Roadmap
 
 - [x] Navigation tree + all screens on dummy data
-- [ ] expo-sqlite + Drizzle schema, migrations, seed
-- [ ] Repositories + `useLiveQuery` reactive reads
-- [ ] Redux Toolkit (session/UI/POS-flow/sync status) + redux-persist
-- [ ] Outbox sync engine + `MockAdapter`
+- [x] expo-sqlite + Drizzle schema, migrations, seed
+- [x] Repositories + `useLiveQuery` reactive reads + transactional mutations (outbox on every write)
+- [x] POS sessions (open/close ⇄ POS Opening/Closing Entry) + voucher redemptions
+- [ ] More mock data / edge-case fixtures
+- [ ] Outbox sync engine + `MockAdapter` (then Redux Toolkit for sync/session state where needed)
 - [ ] `FrappeAdapter` against ERPNext REST
 - [ ] Dev-client build (QR voucher scanning, receipt printing, SQLCipher)
-  </content>
-
-</invoke>
