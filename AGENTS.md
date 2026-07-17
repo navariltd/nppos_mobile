@@ -50,3 +50,5 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before 
 ## Reference docs
 
 - POS flow diagram: `docs/pos_design.jpeg`
+- Frappe backend (aigt_hdr) doctypes & flows, distilled for this app: `docs/FRAPPE_BACKEND.md` — read this instead of digging through the backend source.
+- The nppos web-POS app (Entitlement Voucher / Entitlement Redemption doctypes, redemption→ledger behavior): `docs/NPPOS_WEB.md`.
