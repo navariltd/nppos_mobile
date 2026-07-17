@@ -39,6 +39,7 @@ export function toVoucher(r: typeof vouchers.$inferSelect): Voucher {
 		id: r.id,
 		voucherNo: r.voucherNo,
 		beneficiaryNo: r.beneficiaryNo ?? undefined,
+		entitlementType: r.entitlementType,
 		amount: r.amount,
 		validFrom: r.validFrom,
 		validTo: r.validTo,

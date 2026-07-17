@@ -27,14 +27,16 @@ our local unique `voucher_no`.
 | `warehouse` | Link | where goods redemption draws stock from |
 | `company` (reqd), `project`, `cost_center`, `description` | | accounting dimensions apply |
 
-**Design difference vs our local model:** a backend voucher carries **one**
-entitlement (Goods *or* Cash, one item line). Our local `vouchers` +
-`entitlements` split is a superset — at sync time one Entitlement Voucher maps
-to one local voucher row **plus one** entitlement row. Also note there is **no
-max-uses / transaction-count field**: the spec's "2 transactions per voucher"
-rule exists only in our local validation for now, and "Partially Redeemed"
-implies partial qty/amount redemption rather than counted uses. Flag this to
-the backend team.
+**Local model matches this:** a voucher carries **one** entitlement (Goods *or*
+Cash). Locally, `vouchers.entitlement_type` mirrors the backend field and
+exactly **one** `entitlements` row exists per voucher holding the detail
+(hamperId/qty or amount) — one Entitlement Voucher ⇄ one voucher row + one
+entitlement row at sync time. Voucher status is derived from what's left to
+redeem: all entitlements issued → `redeemed`, else `partially_redeemed`.
+Note the backend has **no max-uses / transaction-count field**: the spec's
+"2 transactions per voucher" rule exists only in our local validation for now,
+and "Partially Redeemed" implies partial qty/amount redemption rather than
+counted uses. Flag this to the backend team.
 
 ## Entitlement Redemption
 

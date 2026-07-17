@@ -58,7 +58,9 @@ export interface Voucher {
 	id: string;
 	voucherNo: string;
 	beneficiaryNo?: string; // walk-ins may not map to a beneficiary record
-	amount: number;
+	// one entitlement per voucher Goods|Cash
+	entitlementType: 'cash' | 'hamper';
+	amount: number; // 0 for hamper vouchers
 	validFrom: string;
 	validTo: string;
 	status: VoucherStatus;

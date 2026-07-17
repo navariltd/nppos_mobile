@@ -63,7 +63,7 @@ erDiagram
     DISBURSEMENT_ORDER ||--o{ ASSIGNMENT : "per agent"
     ASSIGNMENT ||--o{ BENEFICIARY : lists
     BENEFICIARY ||--o{ ENTITLEMENT : allocated
-    VOUCHER ||--o{ ENTITLEMENT : allocated
+    VOUCHER ||--|| ENTITLEMENT : "one, Goods|Cash"
     BENEFICIARY ||--o{ VOUCHER : "may own"
     HAMPER ||--o{ HAMPER_ITEM : contains
     ENTITLEMENT }o--|| HAMPER : "goods type"
@@ -76,7 +76,7 @@ erDiagram
 |---|---|---|
 | `projects`, `disbursement_orders`, `assignments` | pulled | mandatory refs on every transaction |
 | `beneficiaries` | pulled | only the agent's assigned slice; ben no, name, ID info, photo? |
-| `vouchers` | pulled + counted locally | voucher no (unique), amount, validity from/to, status, `uses_count` (max 2), project/DO refs |
+| `vouchers` | pulled + counted locally | voucher no (unique = doc name on backend), **one entitlement per voucher** (`entitlement_type` cash \| hamper, mirrors Entitlement Voucher's Goods\|Cash), amount, validity from/to, status, `uses_count` (max 2, local-only rule), project/DO refs |
 | `entitlements` | pulled | type: `hamper` \| `cash` \| `card`; qty/amount; status |
 | `hampers`, `hamper_items` | pulled | BOM + components (item, unit, qty/household) |
 | `agent_stock` | pulled + decremented locally | agent-warehouse levels per finished item |

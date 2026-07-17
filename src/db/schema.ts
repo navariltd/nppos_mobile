@@ -67,7 +67,13 @@ export const vouchers = sqliteTable(
 		id: text('id').primaryKey(),
 		voucherNo: text('voucher_no').notNull().unique(),
 		beneficiaryNo: text('beneficiary_no'), // walk-ins may have no beneficiary row
-		amount: real('amount').notNull().default(0),
+		// One entitlement per voucher, like the backend's Entitlement Voucher
+		// (Goods|Cash). The linked entitlements row carries the detail 
+		// (hamperId/qty or amount); exactly one exists per voucher.
+		entitlementType: text('entitlement_type', { enum: ['cash', 'hamper'] })
+			.notNull()
+			.default('cash'),
+		amount: real('amount').notNull().default(0), // 0 for hamper vouchers
 		validFrom: text('valid_from').notNull(),
 		validTo: text('valid_to').notNull(),
 		status: text('status', { enum: ['active', 'partially_redeemed', 'redeemed', 'expired'] })

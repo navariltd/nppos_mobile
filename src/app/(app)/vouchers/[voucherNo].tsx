@@ -100,7 +100,11 @@ export default function VoucherDetail() {
 						<View className="border-border border-t border-dashed" />
 
 						<View className="flex-row items-center">
-							<Stat label="Amount" value={formatKES(voucher.amount)} />
+							{voucher.entitlementType === 'cash' ? (
+								<Stat label="Amount" value={formatKES(voucher.amount)} />
+							) : (
+								<Stat label="Entitlement" value="Hamper" />
+							)}
 							<View className="flex-1 gap-1.5">
 								<UseDots used={voucher.usesCount} max={voucher.maxUses} />
 								<Text className="text-muted-foreground text-[11px] uppercase tracking-wider">
@@ -140,9 +144,9 @@ export default function VoucherDetail() {
 				</Animated.View>
 			)}
 
-			<SectionLabel>Entitlements</SectionLabel>
+			<SectionLabel>Entitlement</SectionLabel>
 			{ents.length === 0 ? (
-				<EmptyState title="No entitlements" />
+				<EmptyState title="No entitlement" />
 			) : (
 				ents.map((e, i) => (
 					<Animated.View key={e.id} entering={FadeInDown.duration(320).delay(120 + i * 70)}>

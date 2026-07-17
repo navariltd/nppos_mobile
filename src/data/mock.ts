@@ -132,7 +132,8 @@ export const entitlements: Entitlement[] = [
 		projectId: 'PRJ-2026-01',
 		disbursementOrderId: 'DO-2026-0007',
 	},
-	// Voucher entitlements (walk-in)
+	// Voucher entitlements (walk-in) — exactly ONE per voucher, like the
+	// backend's Entitlement Voucher (Goods|Cash).
 	{
 		id: 'ENT-V01',
 		type: 'cash',
@@ -148,7 +149,7 @@ export const entitlements: Entitlement[] = [
 		hamperId: 'HMP-A',
 		qty: 1,
 		status: 'available',
-		voucherId: 'VCH-1',
+		voucherId: 'VCH-4',
 		projectId: 'PRJ-2026-01',
 		disbursementOrderId: 'DO-2026-0007',
 	},
@@ -213,11 +214,14 @@ export const beneficiaries: Beneficiary[] = [
 	},
 ];
 
+// One entitlement per voucher (cash amount OR a hamper), mirroring the
+// backend's Entitlement Voucher
 export const vouchers: Voucher[] = [
 	{
 		id: 'VCH-1',
 		voucherNo: 'V-2026-88231',
 		beneficiaryNo: 'B-9001',
+		entitlementType: 'cash',
 		amount: 4000,
 		validFrom: '2026-07-01',
 		validTo: '2026-07-31',
@@ -226,12 +230,13 @@ export const vouchers: Voucher[] = [
 		maxUses: 2,
 		projectId: 'PRJ-2026-01',
 		disbursementOrderId: 'DO-2026-0007',
-		entitlementIds: ['ENT-V01', 'ENT-V02'],
+		entitlementIds: ['ENT-V01'],
 	},
 	{
 		id: 'VCH-2',
 		voucherNo: 'V-2026-88232',
 		beneficiaryNo: 'B-9001',
+		entitlementType: 'cash',
 		amount: 2500,
 		validFrom: '2026-06-01',
 		validTo: '2026-06-30',
@@ -246,6 +251,7 @@ export const vouchers: Voucher[] = [
 		id: 'VCH-3',
 		voucherNo: 'V-2026-88240',
 		beneficiaryNo: 'B-9042',
+		entitlementType: 'cash',
 		amount: 6000,
 		validFrom: '2026-07-01',
 		validTo: '2026-07-31',
@@ -255,6 +261,22 @@ export const vouchers: Voucher[] = [
 		projectId: 'PRJ-2026-01',
 		disbursementOrderId: 'DO-2026-0007',
 		entitlementIds: [],
+	},
+	// Goods voucher — redeems as a hamper from the agent's warehouse
+	{
+		id: 'VCH-4',
+		voucherNo: 'V-2026-88245',
+		beneficiaryNo: 'B-9077',
+		entitlementType: 'hamper',
+		amount: 0,
+		validFrom: '2026-07-01',
+		validTo: '2026-07-31',
+		status: 'active',
+		usesCount: 0,
+		maxUses: 2,
+		projectId: 'PRJ-2026-01',
+		disbursementOrderId: 'DO-2026-0007',
+		entitlementIds: ['ENT-V02'],
 	},
 ];
 

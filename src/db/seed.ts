@@ -101,6 +101,7 @@ export function seedIfEmpty(): void {
 					id: v.id,
 					voucherNo: v.voucherNo,
 					beneficiaryNo: v.beneficiaryNo,
+					entitlementType: v.entitlementType,
 					amount: v.amount,
 					validFrom: v.validFrom,
 					validTo: v.validTo,

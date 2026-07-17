@@ -87,7 +87,7 @@ export default function VoucherSearch() {
 					<EmptyState
 						icon={Ticket}
 						title="Search a voucher"
-						subtitle="Try V-2026-88231 or B-9001"
+						subtitle="Try V-2026-88231 (cash), V-2026-88245 (hamper) or B-9001"
 					/>
 				) : results.length === 0 ? (
 					<EmptyState icon={SearchX} title="No match" subtitle="Check the number and try again" />
@@ -97,7 +97,7 @@ export default function VoucherSearch() {
 							{i > 0 && <Separator />}
 							<ListRow
 								title={v.voucherNo}
-								subtitle={`${formatKES(v.amount)} · ${v.usesCount}/${v.maxUses} uses`}
+								subtitle={`${v.entitlementType === 'cash' ? formatKES(v.amount) : 'Hamper'} · ${v.usesCount}/${v.maxUses} uses`}
 								onPress={() => router.push(`/vouchers/${v.voucherNo}`)}
 								leading={
 									<View className="bg-primary/10 h-10 w-10 items-center justify-center rounded-xl">

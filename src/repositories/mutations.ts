@@ -106,11 +106,19 @@ function applyIssueSideEffects(
 		.run();
 
 	if (voucher) {
-		const uses = voucher.usesCount + 1;
+		// Status follows what's left to redeem (backend vocabulary): with one
+		// entitlement per voucher a full redemption goes straight to 'redeemed'.
+		const remaining = tx
+			.select({ id: entitlements.id })
+			.from(entitlements)
+			.where(
+				and(eq(entitlements.voucherId, voucher.id), eq(entitlements.status, 'available')),
+			)
+			.all();
 		tx.update(vouchers)
 			.set({
-				usesCount: uses,
-				status: uses >= voucher.maxUses ? 'redeemed' : 'partially_redeemed',
+				usesCount: voucher.usesCount + 1,
+				status: remaining.length === 0 ? 'redeemed' : 'partially_redeemed',
 			})
 			.where(eq(vouchers.id, voucher.id))
 			.run();
