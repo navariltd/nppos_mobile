@@ -1,3 +1,4 @@
+import { PosSessionCard } from '@/components/domain/PosSessionCard';
 import { SyncStatusPill } from '@/components/domain/SyncStatusPill';
 import { ActionTile, ListRow, SectionLabel, Stat } from '@/components/domain/widgets';
 import { Card, CardContent } from '@/components/ui/card';
@@ -87,6 +88,11 @@ export default function Dashboard() {
 						</Card>
 					</Animated.View>
 					)}
+
+					{/* Shift control — issuing is gated on an open session */}
+					<Animated.View entering={FadeInDown.duration(350).delay(30)}>
+						<PosSessionCard />
+					</Animated.View>
 
 					{/* Needs-review banner */}
 					{conflicts > 0 && (

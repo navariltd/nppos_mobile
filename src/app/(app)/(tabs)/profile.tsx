@@ -21,7 +21,12 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { currentAgent } from '@/data/mock';
 import { useOnline } from '@/hooks/online';
-import { simulateSyncFlush, useSyncCounts } from '@/repositories';
+import {
+	closePosSession,
+	simulateSyncFlush,
+	useOpenPosSession,
+	useSyncCounts,
+} from '@/repositories';
 import { useSession } from '@/hooks/session';
 import { useThemeMode, type ThemeMode } from '@/hooks/theme';
 import { initials } from '@/lib/format';
@@ -81,6 +86,18 @@ export default function Profile() {
 	const { isOnline, toggle } = useOnline();
 	const { mode, scheme, setMode } = useThemeMode();
 	const { pending, conflicts } = useSyncCounts();
+	const openSession = useOpenPosSession();
+
+	// Never leave a session dangling: sign-out auto-closes it (counted cash
+	// defaults to expected, flagged autoClosed) and syncs if we're online.
+	const handleSignOut = () => {
+		if (openSession) {
+			closePosSession();
+			if (isOnline) simulateSyncFlush();
+		}
+		signOut();
+		router.replace('/login');
+	};
 
 	return (
 		<Screen edges={['top']}>
@@ -214,20 +231,16 @@ export default function Profile() {
 						<AlertDialogHeader>
 							<AlertDialogTitle>Sign out</AlertDialogTitle>
 							<AlertDialogDescription>
-								End this session? Unsynced work stays safe on this device.
+								{openSession
+									? `Your POS session is still open — it will be closed and reconciled at the expected cash amount${isOnline ? ' and synced' : ', queued to sync when back online'}. Unsynced work stays safe on this device.`
+									: 'End this session? Unsynced work stays safe on this device.'}
 							</AlertDialogDescription>
 						</AlertDialogHeader>
 						<AlertDialogFooter>
 							<AlertDialogCancel>
 								<Text>Cancel</Text>
 							</AlertDialogCancel>
-							<AlertDialogAction
-								className="bg-destructive"
-								onPress={() => {
-									signOut();
-									router.replace('/login');
-								}}
-							>
+							<AlertDialogAction className="bg-destructive" onPress={handleSignOut}>
 								<Text>Sign out</Text>
 							</AlertDialogAction>
 						</AlertDialogFooter>

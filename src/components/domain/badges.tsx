@@ -28,8 +28,9 @@ export function SyncBadge({ status }: { status: SyncStatus }) {
 export function VoucherStatusBadge({ status }: { status: VoucherStatus }) {
 	const map: Record<VoucherStatus, { cls: string; text: string; label: string }> = {
 		active: { cls: 'bg-success/10', text: 'text-success', label: 'Active' },
+		partially_redeemed: { cls: 'bg-warning/15', text: 'text-warning', label: 'Partially redeemed' },
+		redeemed: { cls: 'bg-muted', text: 'text-muted-foreground', label: 'Redeemed' },
 		expired: { cls: 'bg-destructive/10', text: 'text-destructive', label: 'Expired' },
-		exhausted: { cls: 'bg-muted', text: 'text-muted-foreground', label: 'Exhausted' },
 	};
 	const m = map[status];
 	return (

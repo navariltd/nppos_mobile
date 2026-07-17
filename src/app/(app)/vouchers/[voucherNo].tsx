@@ -21,6 +21,7 @@ import {
 	issueCashEntitlement,
 	useEntitlementsForVoucher,
 	useProject,
+	useRedemptionsForVoucher,
 	useVoucherByNo,
 } from '@/repositories';
 import { cn } from '@/lib/utils';
@@ -54,6 +55,7 @@ export default function VoucherDetail() {
 	const voucher = useVoucherByNo(voucherNo);
 	const project = useProject(voucher?.projectId);
 	const ents = useEntitlementsForVoucher(voucher?.id);
+	const redemptions = useRedemptionsForVoucher(voucher?.id);
 	const [confirmCash, setConfirmCash] = React.useState<Entitlement | null>(null);
 
 	if (!voucher) {
@@ -65,7 +67,8 @@ export default function VoucherDetail() {
 	}
 
 	const usesLeft = voucher.maxUses - voucher.usesCount;
-	const canIssue = voucher.status === 'active' && usesLeft > 0;
+	const canIssue =
+		(voucher.status === 'active' || voucher.status === 'partially_redeemed') && usesLeft > 0;
 
 	const issue = (e: Entitlement) => {
 		if (e.type === 'hamper') {
@@ -127,8 +130,8 @@ export default function VoucherDetail() {
 					<AlertBanner icon={Info} className="border-warning/40 bg-warning/10">
 						<AlertTitle className="text-warning">Cannot issue</AlertTitle>
 						<AlertDescription className="text-warning">
-							{voucher.status === 'exhausted'
-								? 'Voucher has reached its 2-use limit.'
+							{voucher.status === 'redeemed'
+								? 'Voucher is fully redeemed.'
 								: voucher.status === 'expired'
 									? 'Voucher is outside its validity window.'
 									: 'This voucher cannot be issued.'}
@@ -151,6 +154,28 @@ export default function VoucherDetail() {
 						/>
 					</Animated.View>
 				))
+			)}
+
+			{/* Each voucher use — mirrors the backend's Entitlement Redemption */}
+			{redemptions.length > 0 && (
+				<>
+					<SectionLabel>Redemptions</SectionLabel>
+					<Card>
+						<CardContent className="gap-2.5 pt-5">
+							{redemptions.map((r) => (
+								<View key={r.id} className="flex-row items-center justify-between">
+									<Text className="text-muted-foreground flex-1 text-sm">
+										{r.type === 'cash' ? 'Cash payout' : 'Hamper issued'} ·{' '}
+										{formatDate(r.redeemedAt)}
+									</Text>
+									<Text className="font-display-medium text-sm">
+										{r.type === 'cash' ? formatKES(r.amount) : `×${r.qty ?? 1}`}
+									</Text>
+								</View>
+							))}
+						</CardContent>
+					</Card>
+				</>
 			)}
 
 			{/* Cash payout confirmation */}
