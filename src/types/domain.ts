@@ -49,8 +49,8 @@ export interface Beneficiary {
 	householdSize: number;
 	projectId: string;
 	assignmentId: string;
-	// derived convenience
-	entitlementIds: string[];
+	// derived convenience (mock-data era; DB reads derive via entitlements table)
+	entitlementIds?: string[];
 	lastIssuedAt?: string;
 }
 
@@ -66,7 +66,7 @@ export interface Voucher {
 	maxUses: number;
 	projectId: string;
 	disbursementOrderId: string;
-	entitlementIds: string[];
+	entitlementIds?: string[];
 }
 
 export interface HamperItem {
@@ -111,8 +111,10 @@ export interface PosTransaction {
 	subtitle: string;
 	amount?: number;
 	qty?: number;
+	beneficiaryId?: string;
 	beneficiaryName?: string;
 	voucherNo?: string;
+	entitlementId?: string;
 	projectId: string;
 	disbursementOrderId: string;
 	status: SyncStatus;
