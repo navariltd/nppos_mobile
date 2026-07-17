@@ -18,13 +18,14 @@ import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
-import {
-	beneficiaryTransactions,
-	getBeneficiary,
-	getEntitlementsForBeneficiary,
-	getProject,
-} from '@/data/mock';
 import { formatKES, initials } from '@/lib/format';
+import {
+	issueCashEntitlement,
+	useBeneficiary,
+	useBeneficiaryTransactions,
+	useEntitlementsForBeneficiary,
+	useProject,
+} from '@/repositories';
 import type { Entitlement } from '@/types/domain';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { IdCard, Phone, UserRoundX, UsersRound, type LucideIcon } from 'lucide-react-native';
@@ -45,7 +46,10 @@ function Detail({ icon, label, value }: { icon: LucideIcon; label: string; value
 export default function BeneficiaryDetail() {
 	const { id } = useLocalSearchParams<{ id: string }>();
 	const router = useRouter();
-	const beneficiary = id ? getBeneficiary(id) : undefined;
+	const beneficiary = useBeneficiary(id);
+	const project = useProject(beneficiary?.projectId);
+	const ents = useEntitlementsForBeneficiary(id);
+	const history = useBeneficiaryTransactions(id);
 	const [confirmCash, setConfirmCash] = React.useState<Entitlement | null>(null);
 	const [tab, setTab] = React.useState('entitlements');
 
@@ -57,9 +61,6 @@ export default function BeneficiaryDetail() {
 		);
 	}
 
-	const project = getProject(beneficiary.projectId);
-	const ents = getEntitlementsForBeneficiary(beneficiary.id);
-	const history = beneficiaryTransactions(beneficiary.id);
 	const available = ents.filter((e) => e.status === 'available').length;
 
 	const issue = (e: Entitlement) => {
@@ -177,8 +178,15 @@ export default function BeneficiaryDetail() {
 						</AlertDialogCancel>
 						<AlertDialogAction
 							onPress={() => {
+								const ent = confirmCash;
 								setConfirmCash(null);
-								Alert.alert('Recorded', 'Queued for sync (dummy).');
+								if (!ent) return;
+								const result = issueCashEntitlement(ent.id);
+								if (result.ok) {
+									Alert.alert('Recorded', 'Cash payout saved offline and queued for sync.');
+								} else {
+									Alert.alert('Could not issue', result.reason);
+								}
 							}}
 						>
 							<Text>Confirm</Text>

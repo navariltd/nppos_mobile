@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Text } from '@/components/ui/text';
 import { useOnline } from '@/hooks/online';
 import { formatKES } from '@/lib/format';
+import { useAvailableEntitlements, useBeneficiary } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { ArrowDown, CircleCheck, CloudOff, Wifi } from 'lucide-react-native';
 import * as React from 'react';
@@ -22,6 +23,10 @@ export default function CardValidate() {
 	const { isOnline } = useOnline();
 	const [card, setCard] = React.useState('');
 	const [state, setState] = React.useState<'idle' | 'loading' | 'valid'>('idle');
+
+	// Bank stub: "validating" resolves to the first open card entitlement.
+	const cardEnt = useAvailableEntitlements().find((e) => e.type === 'card');
+	const holder = useBeneficiary(cardEnt?.beneficiaryId);
 
 	const validate = () => {
 		setState('loading');
@@ -107,27 +112,40 @@ export default function CardValidate() {
 				</Animated.View>
 			)}
 
-			{state === 'valid' && (
-				<Animated.View entering={FadeInDown.duration(300)}>
-					<Card className="border-success/30">
-						<CardContent className="gap-4 pt-5">
-							<View className="flex-row items-center gap-2">
-								<Icon as={CircleCheck} size={18} className="text-success" />
-								<Text className="font-display-semibold text-base">Card valid · Fatuma Ali</Text>
-							</View>
-							<Separator />
-							<View className="flex-row">
-								<Stat label="Available balance" value={formatKES(5000)} />
-								<Stat label="Entitlement" value={formatKES(5000)} />
-							</View>
-							<Button size="lg" onPress={() => router.push('/card/withdraw')}>
-								<Icon as={ArrowDown} size={18} className="text-primary-foreground" />
-								<Text>Initiate withdrawal</Text>
-							</Button>
-						</CardContent>
-					</Card>
-				</Animated.View>
-			)}
+			{state === 'valid' &&
+				(cardEnt ? (
+					<Animated.View entering={FadeInDown.duration(300)}>
+						<Card className="border-success/30">
+							<CardContent className="gap-4 pt-5">
+								<View className="flex-row items-center gap-2">
+									<Icon as={CircleCheck} size={18} className="text-success" />
+									<Text className="font-display-semibold text-base">
+										Card valid · {holder?.name ?? 'Cardholder'}
+									</Text>
+								</View>
+								<Separator />
+								<View className="flex-row">
+									<Stat label="Available balance" value={formatKES(cardEnt.amount ?? 0)} />
+									<Stat label="Entitlement" value={formatKES(cardEnt.amount ?? 0)} />
+								</View>
+								<Button size="lg" onPress={() => router.push('/card/withdraw')}>
+									<Icon as={ArrowDown} size={18} className="text-primary-foreground" />
+									<Text>Initiate withdrawal</Text>
+								</Button>
+							</CardContent>
+						</Card>
+					</Animated.View>
+				) : (
+					<Animated.View entering={FadeInDown.duration(300)}>
+						<Card>
+							<EmptyState
+								icon={CircleCheck}
+								title="No card entitlement open"
+								subtitle="Every card entitlement on your assignment has been issued."
+							/>
+						</Card>
+					</Animated.View>
+				))}
 		</Screen>
 	);
 }

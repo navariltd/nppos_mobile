@@ -4,15 +4,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Progress } from '@/components/ui/progress';
 import { Text } from '@/components/ui/text';
-import {
-	agentStock,
-	conflictCount,
-	currentAgent,
-	disbursementOrders,
-	pendingCount,
-} from '@/data/mock';
+import { currentAgent } from '@/data/mock';
 import { useOnline } from '@/hooks/online';
 import { useSession } from '@/hooks/session';
+import { useAgentStock, useDisbursementOrders, useSyncCounts } from '@/repositories';
 import { useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
@@ -36,11 +31,14 @@ export default function Dashboard() {
 	const isFocused = useIsFocused();
 	const { isOnline } = useOnline();
 	const { role } = useSession();
-	const conflicts = conflictCount();
-	const pending = pendingCount();
+	const { pending, conflicts } = useSyncCounts();
+	const disbursementOrders = useDisbursementOrders();
+	const agentStock = useAgentStock();
 
 	const primaryDO = disbursementOrders[0];
-	const progress = Math.round((primaryDO.issuedCount / primaryDO.totalBeneficiaries) * 100);
+	const progress = primaryDO
+		? Math.round((primaryDO.issuedCount / primaryDO.totalBeneficiaries) * 100)
+		: 0;
 	const issuedToday = agentStock.reduce((sum, s) => sum + s.issuedToday, 0);
 
 	return (
@@ -69,6 +67,7 @@ export default function Dashboard() {
 				{/* Content overlaps the canopy */}
 				<View className="-mt-12 gap-4 px-4">
 					{/* Today's DO progress */}
+					{primaryDO && (
 					<Animated.View entering={FadeInDown.duration(350)}>
 						<Card className="shadow-md shadow-black/10">
 							<CardContent className="gap-4 pt-5">
@@ -87,6 +86,7 @@ export default function Dashboard() {
 							</CardContent>
 						</Card>
 					</Animated.View>
+					)}
 
 					{/* Needs-review banner */}
 					{conflicts > 0 && (

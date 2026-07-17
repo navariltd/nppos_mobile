@@ -4,15 +4,17 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Text } from '@/components/ui/text';
-import { disbursementOrders, getProject } from '@/data/mock';
+import { useDisbursementOrders, useProjects } from '@/repositories';
 import { View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function Orders() {
+	const disbursementOrders = useDisbursementOrders();
+	const projects = useProjects();
 	return (
 		<Screen>
 			{disbursementOrders.map((d, i) => {
-				const project = getProject(d.projectId);
+				const project = projects.find((p) => p.id === d.projectId);
 				const pct = Math.round((d.issuedCount / d.totalBeneficiaries) * 100);
 				return (
 					<Animated.View key={d.id} entering={FadeInDown.duration(300).delay(i * 60)}>

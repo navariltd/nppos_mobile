@@ -6,7 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { getBeneficiary, getEntitlement, getProject, getVoucher } from '@/data/mock';
+import {
+	issueGoodsEntitlement,
+	useBeneficiary,
+	useEntitlement,
+	useProject,
+	useVoucher,
+} from '@/repositories';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
 	Check,
@@ -20,7 +26,7 @@ import {
 	type LucideIcon,
 } from 'lucide-react-native';
 import * as React from 'react';
-import { View } from 'react-native';
+import { Alert, View } from 'react-native';
 import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 
 function InfoRow({ icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
@@ -38,18 +44,11 @@ export default function ConfirmIssue() {
 	const router = useRouter();
 	const [done, setDone] = React.useState(false);
 
-	const ent = getEntitlement(entitlementId);
-	if (!ent) {
-		return (
-			<Screen>
-				<EmptyState icon={CircleAlert} title="Entitlement not found" subtitle={entitlementId} />
-			</Screen>
-		);
-	}
+	const ent = useEntitlement(entitlementId);
+	const beneficiary = useBeneficiary(ent?.beneficiaryId);
+	const voucher = useVoucher(ent?.voucherId);
+	const project = useProject(ent?.projectId);
 
-	const beneficiary = ent.beneficiaryId ? getBeneficiary(ent.beneficiaryId) : undefined;
-	const voucher = ent.voucherId ? getVoucher(ent.voucherId) : undefined;
-	const project = getProject(ent.projectId);
 	const recipient = beneficiary?.name ?? voucher?.voucherNo ?? '—';
 
 	if (done) {
@@ -77,6 +76,23 @@ export default function ConfirmIssue() {
 			</Screen>
 		);
 	}
+
+	if (!ent) {
+		return (
+			<Screen>
+				<EmptyState icon={CircleAlert} title="Entitlement not found" subtitle={entitlementId} />
+			</Screen>
+		);
+	}
+
+	const confirm = () => {
+		const result = issueGoodsEntitlement(ent.id);
+		if (result.ok) {
+			setDone(true);
+		} else {
+			Alert.alert('Could not issue', result.reason);
+		}
+	};
 
 	return (
 		<Screen>
@@ -106,7 +122,7 @@ export default function ConfirmIssue() {
 					</AlertDescription>
 				</AlertBanner>
 
-				<Button size="lg" onPress={() => setDone(true)}>
+				<Button size="lg" onPress={confirm}>
 					<Icon as={Check} size={20} className="text-primary-foreground" />
 					<Text>Confirm issue</Text>
 				</Button>

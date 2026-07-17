@@ -7,8 +7,8 @@ import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { getEntitlementsForBeneficiary, searchBeneficiaries } from '@/data/mock';
 import { initials } from '@/lib/format';
+import { useAvailableEntitlements, useBeneficiaries } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { Search, UserSearch } from 'lucide-react-native';
 import * as React from 'react';
@@ -18,7 +18,8 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 export default function Beneficiaries() {
 	const router = useRouter();
 	const [q, setQ] = React.useState('');
-	const results = searchBeneficiaries(q);
+	const results = useBeneficiaries(q);
+	const availableEnts = useAvailableEntitlements();
 
 	return (
 		<Screen edges={['top']} scroll={false}>
@@ -53,8 +54,7 @@ export default function Beneficiaries() {
 				>
 					<Card className="overflow-hidden py-0">
 						{results.map((b, i) => {
-							const ents = getEntitlementsForBeneficiary(b.id);
-							const available = ents.filter((e) => e.status === 'available').length;
+							const available = availableEnts.filter((e) => e.beneficiaryId === b.id).length;
 							return (
 								<Animated.View
 									key={b.id}

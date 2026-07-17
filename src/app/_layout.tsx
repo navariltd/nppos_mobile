@@ -1,5 +1,6 @@
 import '../../global.css';
 
+import { DbProvider } from '@/db/provider';
 import { OnlineProvider } from '@/hooks/online';
 import { SessionProvider } from '@/hooks/session';
 import { ThemeModeProvider, useThemeMode } from '@/hooks/theme';
@@ -66,13 +67,15 @@ export default function RootLayout() {
 
 	return (
 		<SafeAreaProvider>
-			<ThemeModeProvider>
-				<SessionProvider>
-					<OnlineProvider>
-						<RootNavigator />
-					</OnlineProvider>
-				</SessionProvider>
-			</ThemeModeProvider>
+			<DbProvider>
+				<ThemeModeProvider>
+					<SessionProvider>
+						<OnlineProvider>
+							<RootNavigator />
+						</OnlineProvider>
+					</SessionProvider>
+				</ThemeModeProvider>
+			</DbProvider>
 		</SafeAreaProvider>
 	);
 }

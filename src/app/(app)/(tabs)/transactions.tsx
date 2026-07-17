@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { transactions } from '@/data/mock';
+import { useTransactions } from '@/repositories';
 import type { SyncStatus } from '@/types/domain';
 import { useRouter } from 'expo-router';
 import { ReceiptText } from 'lucide-react-native';
@@ -25,7 +25,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 export default function Transactions() {
 	const router = useRouter();
 	const [filter, setFilter] = React.useState<Filter>('all');
-	const list = transactions.filter((t) => filter === 'all' || t.status === filter);
+	const list = useTransactions(filter);
 
 	return (
 		<Screen edges={['top']} scroll={false}>

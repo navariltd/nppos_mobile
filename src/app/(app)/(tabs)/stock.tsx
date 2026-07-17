@@ -3,27 +3,55 @@ import { FadeInView, Stat } from '@/components/domain/widgets';
 import {
 	AlertDialog,
 	AlertDialogAction,
+	AlertDialogCancel,
 	AlertDialogContent,
 	AlertDialogDescription,
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
-	AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { agentStock, currentAgent } from '@/data/mock';
+import { currentAgent } from '@/data/mock';
+import { reportDamagedStock, returnStock, useAgentStock } from '@/repositories';
+import type { AgentStockRow } from '@/types/domain';
 import { TriangleAlert, Undo2 } from 'lucide-react-native';
-import { View } from 'react-native';
+import * as React from 'react';
+import { Alert, View } from 'react-native';
+
+type Adjust = { row: AgentStockRow; kind: 'return' | 'damaged' };
 
 export default function Stock() {
+	const agentStock = useAgentStock();
+	const [adjust, setAdjust] = React.useState<Adjust | null>(null);
+	const [qty, setQty] = React.useState('1');
+
 	const totalOnHand = agentStock.reduce((s, r) => s + r.onHand, 0);
 	const totalIssued = agentStock.reduce((s, r) => s + r.issuedToday, 0);
 	const totalDamaged = agentStock.reduce((s, r) => s + r.damaged, 0);
+
+	const open = (row: AgentStockRow, kind: Adjust['kind']) => {
+		setQty('1');
+		setAdjust({ row, kind });
+	};
+
+	const confirm = () => {
+		if (!adjust) return;
+		const n = Number(qty) || 0;
+		const result =
+			adjust.kind === 'return'
+				? returnStock(adjust.row.hamperId, n)
+				: reportDamagedStock(adjust.row.hamperId, n);
+		setAdjust(null);
+		if (!result.ok) {
+			Alert.alert('Could not record', result.reason);
+		}
+	};
 
 	return (
 		<Screen edges={['top']}>
@@ -80,56 +108,63 @@ export default function Stock() {
 							</View>
 							<Separator />
 							<View className="flex-row gap-2">
-								<AlertDialog>
-									<AlertDialogTrigger asChild>
-										<Button variant="outline" size="sm" className="flex-1">
-											<Icon as={Undo2} size={16} className="text-foreground" />
-											<Text>Return</Text>
-										</Button>
-									</AlertDialogTrigger>
-									<AlertDialogContent>
-										<AlertDialogHeader>
-											<AlertDialogTitle>Return stock</AlertDialogTitle>
-											<AlertDialogDescription>
-												Returns {row.hamperName} to the central warehouse. Not wired up yet —
-												dummy data build.
-											</AlertDialogDescription>
-										</AlertDialogHeader>
-										<AlertDialogFooter>
-											<AlertDialogAction>
-												<Text>OK</Text>
-											</AlertDialogAction>
-										</AlertDialogFooter>
-									</AlertDialogContent>
-								</AlertDialog>
-
-								<AlertDialog>
-									<AlertDialogTrigger asChild>
-										<Button variant="outline" size="sm" className="flex-1">
-											<Icon as={TriangleAlert} size={16} className="text-warning" />
-											<Text>Damaged</Text>
-										</Button>
-									</AlertDialogTrigger>
-									<AlertDialogContent>
-										<AlertDialogHeader>
-											<AlertDialogTitle>Report damaged / expired</AlertDialogTitle>
-											<AlertDialogDescription>
-												Flags units of {row.hamperName} as unusable. Not wired up yet — dummy
-												data build.
-											</AlertDialogDescription>
-										</AlertDialogHeader>
-										<AlertDialogFooter>
-											<AlertDialogAction>
-												<Text>OK</Text>
-											</AlertDialogAction>
-										</AlertDialogFooter>
-									</AlertDialogContent>
-								</AlertDialog>
+								<Button
+									variant="outline"
+									size="sm"
+									className="flex-1"
+									onPress={() => open(row, 'return')}
+								>
+									<Icon as={Undo2} size={16} className="text-foreground" />
+									<Text>Return</Text>
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									className="flex-1"
+									onPress={() => open(row, 'damaged')}
+								>
+									<Icon as={TriangleAlert} size={16} className="text-warning" />
+									<Text>Damaged</Text>
+								</Button>
 							</View>
 						</CardContent>
 					</Card>
 				</FadeInView>
 			))}
+
+			<AlertDialog open={adjust !== null} onOpenChange={(o) => !o && setAdjust(null)}>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>
+							{adjust?.kind === 'return' ? 'Return stock' : 'Report damaged / expired'}
+						</AlertDialogTitle>
+						<AlertDialogDescription>
+							{adjust?.kind === 'return'
+								? `Return units of ${adjust?.row.hamperName} to the central warehouse. Recorded offline and queued for sync.`
+								: `Write off units of ${adjust?.row.hamperName} as unusable. Recorded offline and queued for sync.`}
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<View className="gap-1.5">
+						<Text className="text-muted-foreground text-xs">
+							Quantity (max {adjust?.row.onHand ?? 0})
+						</Text>
+						<Input
+							value={qty}
+							onChangeText={setQty}
+							keyboardType="number-pad"
+							className="h-12 rounded-xl"
+						/>
+					</View>
+					<AlertDialogFooter>
+						<AlertDialogCancel>
+							<Text>Cancel</Text>
+						</AlertDialogCancel>
+						<AlertDialogAction onPress={confirm}>
+							<Text>Confirm</Text>
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 		</Screen>
 	);
 }

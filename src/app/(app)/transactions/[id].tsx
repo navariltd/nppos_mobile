@@ -8,8 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { getProject, transactions } from '@/data/mock';
 import { formatDateTime, formatKES } from '@/lib/format';
+import { useProject, useTransaction } from '@/repositories';
 import { cn } from '@/lib/utils';
 import type { TransactionType } from '@/types/domain';
 import { useLocalSearchParams } from 'expo-router';
@@ -65,7 +65,8 @@ function DetailRow({
 
 export default function TransactionDetail() {
 	const { id } = useLocalSearchParams<{ id: string }>();
-	const txn = transactions.find((t) => t.id === id);
+	const txn = useTransaction(id);
+	const project = useProject(txn?.projectId);
 
 	if (!txn) {
 		return (
@@ -76,7 +77,6 @@ export default function TransactionDetail() {
 	}
 
 	const s = TXN_TYPE_STYLE[txn.type];
-	const project = getProject(txn.projectId);
 
 	return (
 		<Screen>

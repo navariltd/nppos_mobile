@@ -19,8 +19,9 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
-import { conflictCount, currentAgent, pendingCount } from '@/data/mock';
+import { currentAgent } from '@/data/mock';
 import { useOnline } from '@/hooks/online';
+import { simulateSyncFlush, useSyncCounts } from '@/repositories';
 import { useSession } from '@/hooks/session';
 import { useThemeMode, type ThemeMode } from '@/hooks/theme';
 import { initials } from '@/lib/format';
@@ -79,6 +80,7 @@ export default function Profile() {
 	const { name, role, setRole, signOut } = useSession();
 	const { isOnline, toggle } = useOnline();
 	const { mode, scheme, setMode } = useThemeMode();
+	const { pending, conflicts } = useSyncCounts();
 
 	return (
 		<Screen edges={['top']}>
@@ -123,25 +125,32 @@ export default function Profile() {
 						icon={CloudUpload}
 						iconClassName="text-warning"
 						label="Pending sync"
-						value={`${pendingCount()} items`}
+						value={`${pending} items`}
 					/>
 					<Separator />
 					<Row
 						icon={CircleAlert}
 						iconClassName="text-destructive"
 						label="Needs review"
-						value={`${conflictCount()} items`}
+						value={`${conflicts} items`}
 					/>
 					<Separator />
 					<Row
 						icon={RefreshCw}
 						label="Sync now"
-						onPress={() =>
+						onPress={() => {
+							if (!isOnline) {
+								Alert.alert('Sync', 'Offline — cannot sync right now.');
+								return;
+							}
+							const flushed = simulateSyncFlush();
 							Alert.alert(
 								'Sync',
-								isOnline ? 'Flushing outbox… (stub)' : 'Offline — cannot sync right now.',
-							)
-						}
+								flushed > 0
+									? `${flushed} transaction${flushed > 1 ? 's' : ''} synced (simulated).`
+									: 'Nothing pending — all synced.',
+							);
+						}}
 						right={Chevron}
 					/>
 				</Card>

@@ -17,8 +17,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { agentStock, conflictCount, pendingCount, transactions } from '@/data/mock';
 import { formatKES } from '@/lib/format';
+import { useAgentStock, useSyncCounts, useTransactions } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { ClipboardCheck, TriangleAlert } from 'lucide-react-native';
 import { Alert, View } from 'react-native';
@@ -27,14 +27,16 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 export default function Reconciliation() {
 	const router = useRouter();
 
+	const transactions = useTransactions();
+	const agentStock = useAgentStock();
+	const { pending, conflicts } = useSyncCounts();
+
 	const cashTxns = transactions.filter((t) => t.type === 'cash_payment');
 	const cashTotal = cashTxns.reduce((s, t) => s + (t.amount ?? 0), 0);
 	const cardTotal = transactions
 		.filter((t) => t.type === 'card_withdrawal')
 		.reduce((s, t) => s + (t.amount ?? 0), 0);
 	const hampersIssued = agentStock.reduce((s, r) => s + r.issuedToday, 0);
-	const pending = pendingCount();
-	const conflicts = conflictCount();
 
 	return (
 		<Screen>

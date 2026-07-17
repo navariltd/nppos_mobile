@@ -1,7 +1,7 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { conflictCount, pendingCount } from '@/data/mock';
 import { useOnline } from '@/hooks/online';
+import { useSyncCounts } from '@/repositories';
 import { cn } from '@/lib/utils';
 import { CircleAlert, RefreshCw, Wifi, WifiOff } from 'lucide-react-native';
 import * as React from 'react';
@@ -19,8 +19,7 @@ import Animated, {
 // `onDark` renders it for the evergreen canopy header.
 export function SyncStatusPill({ onDark = false }: { onDark?: boolean }) {
 	const { isOnline } = useOnline();
-	const pending = pendingCount();
-	const conflicts = conflictCount();
+	const { pending, conflicts } = useSyncCounts();
 	const syncing = isOnline && pending > 0;
 
 	const rotation = useSharedValue(0);

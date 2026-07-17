@@ -7,8 +7,8 @@ import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { beneficiaries, getEntitlementsForBeneficiary, getHamper } from '@/data/mock';
 import { initials } from '@/lib/format';
+import { useAvailableEntitlements, useBeneficiaries, useHampers } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { Gift, Search, Ticket } from 'lucide-react-native';
 import * as React from 'react';
@@ -18,24 +18,19 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 export default function GoodsPicker() {
 	const router = useRouter();
 	const [q, setQ] = React.useState('');
+	const beneficiaries = useBeneficiaries(q);
+	const availableEnts = useAvailableEntitlements();
+	const hampers = useHampers();
 
 	// Beneficiaries with an available hamper entitlement.
 	const rows = beneficiaries
 		.map((b) => {
-			const hamperEnt = getEntitlementsForBeneficiary(b.id).find(
-				(e) => e.type === 'hamper' && e.status === 'available',
+			const hamperEnt = availableEnts.find(
+				(e) => e.beneficiaryId === b.id && e.type === 'hamper',
 			);
 			return hamperEnt ? { b, ent: hamperEnt } : null;
 		})
-		.filter((r): r is NonNullable<typeof r> => r !== null)
-		.filter(({ b }) => {
-			const query = q.trim().toLowerCase();
-			return (
-				!query ||
-				b.name.toLowerCase().includes(query) ||
-				b.beneficiaryNo.toLowerCase().includes(query)
-			);
-		});
+		.filter((r): r is NonNullable<typeof r> => r !== null);
 
 	return (
 		<Screen scroll={false} edges={['bottom']}>
@@ -69,7 +64,7 @@ export default function GoodsPicker() {
 					/>
 				) : (
 					rows.map(({ b, ent }, i) => {
-						const hamper = getHamper(ent.hamperId);
+						const hamper = hampers.find((h) => h.id === ent.hamperId);
 						return (
 							<Animated.View
 								key={b.id}

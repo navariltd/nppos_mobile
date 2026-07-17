@@ -9,8 +9,8 @@ import {
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { getHamper } from '@/data/mock';
 import { formatKES } from '@/lib/format';
+import { useHamper } from '@/repositories';
 import type { Entitlement } from '@/types/domain';
 import { CircleCheck, ChevronDown } from 'lucide-react-native';
 import * as React from 'react';
@@ -30,7 +30,7 @@ export function EntitlementCard({
 	disabled?: boolean;
 }) {
 	const issued = entitlement.status === 'issued';
-	const hamper = getHamper(entitlement.hamperId);
+	const hamper = useHamper(entitlement.hamperId);
 	const [open, setOpen] = React.useState(false);
 
 	return (

@@ -16,8 +16,13 @@ import { Alert as AlertBanner, AlertDescription, AlertTitle } from '@/components
 import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { getEntitlementsForVoucher, getProject, getVoucherByNo } from '@/data/mock';
 import { formatDate, formatKES } from '@/lib/format';
+import {
+	issueCashEntitlement,
+	useEntitlementsForVoucher,
+	useProject,
+	useVoucherByNo,
+} from '@/repositories';
 import { cn } from '@/lib/utils';
 import type { Entitlement } from '@/types/domain';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -46,7 +51,9 @@ function UseDots({ used, max }: { used: number; max: number }) {
 export default function VoucherDetail() {
 	const { voucherNo } = useLocalSearchParams<{ voucherNo: string }>();
 	const router = useRouter();
-	const voucher = getVoucherByNo(voucherNo);
+	const voucher = useVoucherByNo(voucherNo);
+	const project = useProject(voucher?.projectId);
+	const ents = useEntitlementsForVoucher(voucher?.id);
 	const [confirmCash, setConfirmCash] = React.useState<Entitlement | null>(null);
 
 	if (!voucher) {
@@ -57,8 +64,6 @@ export default function VoucherDetail() {
 		);
 	}
 
-	const project = getProject(voucher.projectId);
-	const ents = getEntitlementsForVoucher(voucher.id);
 	const usesLeft = voucher.maxUses - voucher.usesCount;
 	const canIssue = voucher.status === 'active' && usesLeft > 0;
 
@@ -165,10 +170,17 @@ export default function VoucherDetail() {
 						</AlertDialogCancel>
 						<AlertDialogAction
 							onPress={() => {
+								const ent = confirmCash;
 								setConfirmCash(null);
-								Alert.alert('Recorded', 'Cash payout queued for sync (dummy).', [
-									{ text: 'Done', onPress: () => router.back() },
-								]);
+								if (!ent) return;
+								const result = issueCashEntitlement(ent.id);
+								if (result.ok) {
+									Alert.alert('Recorded', 'Cash payout saved offline and queued for sync.', [
+										{ text: 'Done', onPress: () => router.back() },
+									]);
+								} else {
+									Alert.alert('Could not issue', result.reason);
+								}
 							}}
 						>
 							<Text>Confirm</Text>

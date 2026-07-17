@@ -7,26 +7,50 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { formatKES } from '@/lib/format';
+import {
+	recordCardWithdrawal,
+	useAvailableEntitlements,
+	useBeneficiary,
+} from '@/repositories';
 import { useRouter } from 'expo-router';
 import { ArrowDown, Check, CreditCard } from 'lucide-react-native';
 import * as React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Alert, View } from 'react-native';
 import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
-
-const ENTITLED = 5000;
-const PRESETS = [1000, 2500, ENTITLED];
 
 export default function CardWithdraw() {
 	const router = useRouter();
-	const [amount, setAmount] = React.useState(String(ENTITLED));
+	// Bank stub: works against the first open card entitlement (same as validate).
+	const cardEnt = useAvailableEntitlements().find((e) => e.type === 'card');
+	const holder = useBeneficiary(cardEnt?.beneficiaryId);
+	const entitled = cardEnt?.amount ?? 0;
+	const [amount, setAmount] = React.useState('');
 	const [state, setState] = React.useState<'idle' | 'processing' | 'done'>('idle');
 
+	// Live-query data lands after first render; default the input once it does.
+	React.useEffect(() => {
+		if (cardEnt && amount === '') setAmount(String(cardEnt.amount ?? 0));
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [cardEnt]);
+
 	const value = Number(amount) || 0;
-	const overLimit = value > ENTITLED;
+	const overLimit = value > entitled;
+	const presets = [1000, 2500, entitled];
 
 	const submit = () => {
+		if (!cardEnt) return;
+		const entId = cardEnt.id;
 		setState('processing');
-		setTimeout(() => setState('done'), 1300);
+		// Fake bank round-trip; the local record lands when it "confirms".
+		setTimeout(() => {
+			const result = recordCardWithdrawal(entId, value);
+			if (result.ok) {
+				setState('done');
+			} else {
+				setState('idle');
+				Alert.alert('Withdrawal failed', result.reason);
+			}
+		}, 1300);
 	};
 
 	if (state === 'done') {
@@ -65,7 +89,7 @@ export default function CardWithdraw() {
 								<Icon as={CreditCard} size={18} className="text-info" />
 							</View>
 							<View>
-								<Text className="font-medium">Fatuma Ali</Text>
+								<Text className="font-medium">{holder?.name ?? 'Cardholder'}</Text>
 								<Text className="text-muted-foreground font-display-medium text-xs tracking-widest">
 									•••• 4471
 								</Text>
@@ -74,7 +98,7 @@ export default function CardWithdraw() {
 						<Separator />
 						<View className="flex-row justify-between">
 							<Text className="text-muted-foreground text-sm">Entitled</Text>
-							<Text className="font-display-semibold text-sm">{formatKES(ENTITLED)}</Text>
+							<Text className="font-display-semibold text-sm">{formatKES(entitled)}</Text>
 						</View>
 					</CardContent>
 				</Card>
@@ -93,7 +117,7 @@ export default function CardWithdraw() {
 					<Text className="text-destructive text-xs">Exceeds entitled amount.</Text>
 				)}
 				<View className="mt-1 flex-row gap-2">
-					{PRESETS.map((p) => (
+					{presets.map((p) => (
 						<Button
 							key={p}
 							variant={value === p ? 'secondary' : 'outline'}
@@ -101,7 +125,7 @@ export default function CardWithdraw() {
 							className="flex-1 rounded-full"
 							onPress={() => setAmount(String(p))}
 						>
-							<Text>{p === ENTITLED ? 'Full amount' : formatKES(p)}</Text>
+							<Text>{p === entitled ? 'Full amount' : formatKES(p)}</Text>
 						</Button>
 					))}
 				</View>
