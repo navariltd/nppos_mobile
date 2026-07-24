@@ -134,15 +134,17 @@ Rules:
 
 - **Idempotency**: the client UUID travels with every push; the backend must treat re-sends as no-ops. Retries are therefore always safe.
 - **Ordering**: flush outbox FIFO per beneficiary/voucher so dependent entries arrive in order.
-- **Conflicts**: server rejections (double-spent voucher, revoked entitlement) flag the local transaction `conflict` for supervised resolution — nothing is silently discarded.
+- **Conflicts**: server rejections (double-spent voucher, revoked entitlement) flag the local transaction `conflict` for supervised resolution — nothing is silently discarded. **Resolution is an admin action and happens online** (decided): agents only see the "needs review" state; an admin resolves the conflict against live backend data (from the admin section or the backend UI), and the resolution syncs back on the next pull.
 - **Card flow is excluded**: card validate/balance/withdraw calls the bank API in real time and is disabled offline.
 - **Pull strategy**: delta by `modified_since` cursor per collection (`sync_meta`); full re-pull as recovery escape hatch.
 
 ## 5. Screens & navigation (from POS diagram + spec)
 
 ```
-Login
-└── POS Dashboard (role-aware)
+Login (email + password)
+└── Select POS profile (working context: warehouse · currency; also reachable
+    from Profile → "Switch POS profile" when no session is open)
+    └── POS Dashboard (role-aware)
     ├── Cash Withdrawal Vouchers
     │   ├── Search (voucher no = exact match · ben no = list active vouchers)
     │   ├── Voucher detail — entitlements, uses left, validity
@@ -171,6 +173,7 @@ Login
 - **No drawer.** The Dashboard tab is a hub (big action tiles for Vouchers / Goods / Card / Reconciliation — mirrors `pos_design.jpeg`), so everything is ≤2 taps from launch. A drawer would duplicate the hub behind a hamburger.
 - **Second entry path**: Beneficiary detail → entitlement → "Issue" deep-links into the flow with the beneficiary pre-selected ("person-first" vs "flow-first").
 - **Card tile** is disabled + greyed when offline (online-only flow). Dashboard header shows a sync pill (online state + pending outbox count) and a "needs review" banner when conflicts exist.
+- **Connectivity is real + simulatable**: NetInfo drives `deviceOnline` in the sync slice; a "Simulate offline" switch (Profile) forces the effective state offline for testing. Everything gates on the effective `isOnline` (device online AND not simulating) — card flow, sync triggers, and login (an online-only action) all refuse when it's false.
 - **Admin** = dashboard tile → pushed `admin/` stack, role-guarded in `admin/_layout.tsx` (not a 6th tab, not a drawer) — agents and admins share an identical baseline UI.
 - Flow confirmation/success screens use `presentation: 'modal'` (no back-swipe into re-submission; dismiss returns to dashboard).
 
@@ -179,7 +182,8 @@ Route tree (expo-router):
 ```
 src/app/
 ├── _layout.tsx                 # providers: SQLite, Redux store, portal, theme
-├── login.tsx
+├── login.tsx                   # step 1: email + password (ApiAdapter.login)
+├── select-profile.tsx          # step 2: pick the POS profile to work under
 ├── +not-found.tsx
 └── (app)/                      # auth guard (redirect to /login)
     ├── _layout.tsx
@@ -247,12 +251,17 @@ Dependency direction: `app → features/components/hooks → repositories → db
 
 **Decided**
 - expo-sqlite + Drizzle; Redux Toolkit for app state; outbox sync; adapter-interface API with dummy data first.
+- Conflict resolution (§7.4 below): **admin-only, online-only** — agents never clear a `conflict` themselves; the admin resolves it against live backend data.
+- **Login is two-step**: system sign-in with **email + password** (backend: Frappe user), then a **POS profile picker** — the chosen profile is the session's working context (its warehouse scopes the stock view). Stored as `activePosProfileId` in the auth slice; the `(app)` guard redirects to `/select-profile` until one is chosen. **Login returns the user's POS profiles** (upserted into SQLite immediately) so the picker works on a fresh install before the first pull.
+- **Token storage**: the auth token lives in **expo-secure-store** (OS keystore), held in memory by the ApiAdapter, restored on relaunch by `AuthBootstrap`. It is **never** in redux-persist/AsyncStorage (plaintext), and the **password is never stored**. Redux persists only `isAuthenticated`, `agent`, `role`, `activePosProfileId`. Offline PIN re-auth (§7.1) remains a separate future flow.
+- **Stock is per warehouse** (backend: Bin): `agent_stock` is keyed `(warehouse, hamper)`; goods issues and stock adjustments always act on the active profile's warehouse. Beneficiaries/vouchers/entitlements stay **agent-scoped** (they follow the person via the ADA, not the warehouse).
+- **Switching POS profiles** (Profile screen) requires no open POS session — close/reconcile first; a session's float math belongs to one profile. **Sign-out is a full-system logout**: it auto-closes any open session and clears the active profile, so the next login re-picks one.
 
 **Settle early**
 1. **Offline login** — first login must be online (fetch token + assignments); afterwards re-auth with a locally stored PIN (hash in expo-secure-store). Define token refresh/expiry behavior when offline for days.
 2. **Dev client vs Expo Go** — Expo Go is fine until we need SQLCipher, camera/QR voucher scanning, or receipt printers; plan the EAS dev-client switch as its own step.
 3. **Voucher capture UX** — manual entry now; QR/barcode scan (expo-camera) later. Voucher numbers should be checksummed to catch typos.
-4. **Conflict resolution UX** — who clears a `conflict` transaction (agent vs admin) and what the audit trail looks like.
+4. **Conflict resolution UX** — ~~who clears a `conflict` transaction (agent vs admin)~~ **decided: admin, online-only**. Still open: the exact audit trail (who resolved what, when, and how it's recorded backend-side).
 5. **Multi-device / reassignment** — same agent on two devices, or beneficiary reassigned mid-day: server-side revalidation is the backstop; decide how aggressively to re-pull.
 6. **Clock integrity** — offline timestamps come from the device; record both device time and sync time, never trust device time for validity-window enforcement alone.
 7. **Receipts** — on-screen confirmation now; thermal-printer support later (drives dev-client decision).

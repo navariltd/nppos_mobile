@@ -2,8 +2,8 @@
 
 Offline-first **React Native (Expo)** point-of-sale app for the **HDR disbursement system**. Field **agents** distribute goods (hampers), physical cash (via vouchers), and card-based cash to **beneficiaries**, and coordinate with **merchants**. The backend is **Frappe/ERPNext** (already built, out of this repo) — the app talks to it over REST.
 
-> **Current state: full offline data layer on seeded dummy data.**
-> Every screen reads reactively from **expo-sqlite via Drizzle** (`useLiveQuery`), and every POS action(cash payout, hamper issue, card withdrawal, stock return/damage, voucher redemption, POS session open/close) is a real local DB transaction paired with an outbox row. [`src/data/mock.ts`](src/data/mock.ts) now only feeds the one-time seed. **No sync engine yet** - the outbox queues everything and a dev-only "Sync now" stub simulates a flush. Sync + the `FrappeAdapter` come next; the backend mapping is already documented in [`docs/FRAPPE_BACKEND.md`](docs/FRAPPE_BACKEND.md) and [`docs/NPPOS_WEB.md`](docs/NPPOS_WEB.md).
+> **Current state: full offline data layer + real outbox sync engine, running on the MockAdapter.**
+> Every screen reads reactively from **expo-sqlite via Drizzle** (`useLiveQuery`), and every POS action(cash payout, hamper issue, card withdrawal, stock return/damage, voucher redemption, POS session open/close) is a real local DB transaction paired with an outbox row. [`src/data/mock.ts`](src/data/mock.ts) now only feeds the one-time seed. The **`ApiAdapter` interface + `MockAdapter`** live in [`src/services/api/`](src/services/api) (login already routes through it), and **Redux Toolkit + redux-persist** hold session/auth and sync status ([`src/store/`](src/store), [`src/features/`](src/features)). **No sync engine yet** - the outbox queues everything and a dev-only "Sync now" stub simulates a flush. The sync engine (driving the adapter) + the `FrappeAdapter` come next; the backend mapping is already documented in [`docs/FRAPPE_BACKEND.md`](docs/FRAPPE_BACKEND.md) and [`docs/NPPOS_WEB.md`](docs/NPPOS_WEB.md).
 
 ---
 
@@ -22,7 +22,7 @@ npm run android    # open in Android emulator/device
 npm run web        # run in the browser
 ```
 
-**Signing in:** it's a dummy build — enter any Agent/Warehouse ID and **any PIN**. Toggle **Agent** vs **Admin** on the login screen to see the role-gated admin section.
+**Signing in:** it's a dummy build — enter any email and **any password**, then **pick a POS profile** (the profile's warehouse decides which stock you see; switch later from Profile → "POS profile", after closing any open session). Toggle **Agent** vs **Admin** on the login screen to see the role-gated admin section. Signing out logs out of the whole system — the next login picks a profile again.
 
 **Seeding:** on first launch the app runs migrations and seeds SQLite from `src/data/mock.ts` (once, only when the DB is empty). Delete the app from the device/simulator to reseed from scratch. To actually issue anything you must first **open a POS session** from the dashboard (enter an opening cash float) — closing it happens on the Reconciliation screen.
 
@@ -46,7 +46,10 @@ npm run web        # run in the browser
 | Icons         | `@expo/vector-icons` (Material Icons)                                                            |
 | Language      | TypeScript (strict)                                                                              |
 
-**Planned (not in this build):** Redux Toolkit + redux-persist (session/UI/flow/sync state only), and the outbox-flushing sync engine against a swappable `ApiAdapter` (`MockAdapter` → `FrappeAdapter`). The outbox itself is already written on every mutation. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+| App state      | **Redux Toolkit + redux-persist** — session/auth (persisted) and sync status only; no domain rows |
+| API layer      | **`ApiAdapter` interface** ([`src/services/api/`](src/services/api)) — `MockAdapter` now, `FrappeAdapter` later |
+
+**Sync is real now:** `features/sync/engine.ts` flushes the outbox FIFO through the adapter (accepted → synced + server doc name · rejected → `conflict` for admin review · failure → backoff, order preserved), then delta-pulls reference data. Triggers: coming online, app foreground, 60s interval, manual "Sync now", session close. The **`FrappeAdapter`** is written against the three whitelisted endpoints specced in [`docs/SYNC_API.md`](docs/SYNC_API.md) — set `EXPO_PUBLIC_FRAPPE_URL` to use it; the **Python side of those endpoints is the next step**.
 
 ---
 
@@ -92,8 +95,9 @@ Issue an entitlement in the app and watch the row land in `pos_transactions` (pl
 
 ```
 src/app/
-├── _layout.tsx                     # providers (theme, session, online) + root Stack
-├── login.tsx                       # dummy sign-in (any PIN; Agent/Admin toggle)
+├── _layout.tsx                     # providers (store, theme) + root Stack
+├── login.tsx                       # step 1: email + password (any password; Agent/Admin toggle)
+├── select-profile.tsx              # step 2: choose the POS profile to work under
 ├── +not-found.tsx
 └── (app)/                          # auth-gated group
     ├── _layout.tsx                 # Stack: (tabs) + flow routes
@@ -133,8 +137,12 @@ src/
 │   └── domain/         # Screen, SyncStatusPill, PosSessionCard, EntitlementCard, TransactionRow, badges, widgets
 ├── db/                 # Drizzle schema, client (openDatabaseSync + change listener), migrations, seed, DbProvider
 ├── repositories/       # the ONLY module touching db/ — useLiveQuery read hooks + transactional mutations
+├── services/api/       # ApiAdapter interface + MockAdapter (FrappeAdapter later) — resolved via getApi()
+├── features/           # Redux slices: auth (session, sign-in thunk) + sync (engine status)
+├── store/              # RTK store, redux-persist (auth only), typed hooks, StoreProvider
 ├── data/mock.ts        # dummy fixtures — consumed by the seed (and currentAgent/agentsOverview for now)
-├── hooks/              # session (dummy auth/role) + online (connectivity flag) contexts
+├── hooks/              # useSession/useOnline (thin wrappers over the store) + theme
+│                       # connectivity = real NetInfo state + "Simulate offline" dev switch (Profile)
 ├── lib/                # cn() utils, theme tokens, formatters, uuid
 └── types/domain.ts     # shared domain types (stable — future adapters serve these shapes)
 ```
@@ -159,6 +167,7 @@ src/
 - **Architecture (read before structural changes):** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 - **Frappe backend (aigt_hdr) distilled — doctypes, cash/goods pipelines:** [`docs/FRAPPE_BACKEND.md`](docs/FRAPPE_BACKEND.md)
 - **nppos web-POS app — Entitlement Voucher/Redemption, POS Profile wiring:** [`docs/NPPOS_WEB.md`](docs/NPPOS_WEB.md)
+- **Sync API contract (the spec for the backend Python endpoints):** [`docs/SYNC_API.md`](docs/SYNC_API.md)
 - **Agent/contributor rules:** [`AGENTS.md`](AGENTS.md)
 - **POS flow diagram:** `docs/pos_design.jpeg`
 - **Expo SDK 54 docs:** https://docs.expo.dev/versions/v54.0.0/
@@ -170,7 +179,10 @@ src/
 - [x] expo-sqlite + Drizzle schema, migrations, seed
 - [x] Repositories + `useLiveQuery` reactive reads + transactional mutations (outbox on every write)
 - [x] POS sessions (open/close ⇄ POS Opening/Closing Entry) + voucher redemptions
+- [x] `ApiAdapter` interface + `MockAdapter` (login routed through it)
+- [x] Redux Toolkit + redux-persist (auth + sync-status slices; `useSession`/`useOnline` backed by the store)
+- [x] Outbox sync engine (FIFO flush, retry/backoff, conflict flagging — admin resolves conflicts, online-only)
+- [x] `FrappeAdapter` (client side, against the [`docs/SYNC_API.md`](docs/SYNC_API.md) contract; env-switched via `EXPO_PUBLIC_FRAPPE_URL`)
+- [ ] `nppos.api` whitelisted methods in the Frappe app (Python — login / sync_push / sync_pull per the contract)
 - [ ] More mock data / edge-case fixtures
-- [ ] Outbox sync engine + `MockAdapter` (then Redux Toolkit for sync/session state where needed)
-- [ ] `FrappeAdapter` against ERPNext REST
 - [ ] Dev-client build (QR voucher scanning, receipt printing, SQLCipher)

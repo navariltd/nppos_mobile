@@ -10,6 +10,7 @@ import type {
 	DisbursementOrder,
 	Entitlement,
 	Hamper,
+	PosProfile,
 	PosTransaction,
 	Project,
 	Voucher,
@@ -18,10 +19,31 @@ import type {
 export const currentAgent: Agent = {
 	id: 'AGT-014',
 	name: 'Amina Wanjiru',
+	email: 'amina.wanjiru@nppos.org',
 	code: 'WH-NRB-014',
 	role: 'agent',
 	region: 'Nairobi — Kibra',
 };
+
+// POS profiles the agent can work under — each binds to one warehouse
+// (backend: ERPNext POS Profile with enable_entitlement_distribution).
+// Switching profiles switches the stock view to that warehouse.
+export const posProfiles: PosProfile[] = [
+	{
+		id: 'POSP-001',
+		name: 'Kibra Field POS',
+		agentId: 'AGT-014',
+		warehouse: 'WH-NRB-014',
+		currency: 'KES',
+	},
+	{
+		id: 'POSP-002',
+		name: 'Kibra Outreach POS',
+		agentId: 'AGT-014',
+		warehouse: 'WH-NRB-OUT-01',
+		currency: 'KES',
+	},
+];
 
 export const projects: Project[] = [
 	{ id: 'PRJ-2026-01', name: 'HDR Jun 2026 — Food & Cash', code: 'HDR-JUN26' },
@@ -281,8 +303,12 @@ export const vouchers: Voucher[] = [
 ];
 
 export const agentStock: AgentStockRow[] = [
-	{ hamperId: 'HMP-A', hamperName: 'Food Basket A', onHand: 73, issuedToday: 47, damaged: 2 },
-	{ hamperId: 'HMP-B', hamperName: 'Hygiene Basket B', onHand: 40, issuedToday: 8, damaged: 0 },
+	// Kibra Field POS warehouse
+	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-A', hamperName: 'Food Basket A', onHand: 73, issuedToday: 47, damaged: 2 },
+	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-B', hamperName: 'Hygiene Basket B', onHand: 40, issuedToday: 8, damaged: 0 },
+	// Kibra Outreach POS warehouse — deliberately different so switching
+	// profiles visibly switches the stock view.
+	{ warehouse: 'WH-NRB-OUT-01', hamperId: 'HMP-A', hamperName: 'Food Basket A', onHand: 18, issuedToday: 3, damaged: 0 },
 ];
 
 export const transactions: PosTransaction[] = [
@@ -341,8 +367,8 @@ export const transactions: PosTransaction[] = [
 // Admin-only: fleet overview
 export const agentsOverview: (Agent & { issued: number; target: number; pending: number })[] = [
 	{ ...currentAgent, issued: 47, target: 120, pending: 1 },
-	{ id: 'AGT-021', name: 'Brian Otieno', code: 'WH-NRB-021', role: 'agent', region: 'Nairobi — Mathare', issued: 88, target: 100, pending: 0 },
-	{ id: 'AGT-033', name: 'Cynthia Mueni', code: 'WH-NRB-033', role: 'agent', region: 'Nairobi — Dandora', issued: 12, target: 90, pending: 3 },
+	{ id: 'AGT-021', name: 'Brian Otieno', email: 'brian.otieno@nppos.org', code: 'WH-NRB-021', role: 'agent', region: 'Nairobi — Mathare', issued: 88, target: 100, pending: 0 },
+	{ id: 'AGT-033', name: 'Cynthia Mueni', email: 'cynthia.mueni@nppos.org', code: 'WH-NRB-033', role: 'agent', region: 'Nairobi — Dandora', issued: 12, target: 90, pending: 3 },
 ];
 
 // ---- selector helpers -----------------------------------------------------

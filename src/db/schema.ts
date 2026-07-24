@@ -7,7 +7,7 @@
 // - Locally created rows (pos_transactions) use a client UUID as `id` forever;
 //   `serverName` is filled after sync.
 
-import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const projects = sqliteTable('projects', {
 	id: text('id').primaryKey(),
@@ -133,16 +133,21 @@ export const entitlements = sqliteTable(
 	],
 );
 
-// Agent-warehouse stock levels, decremented locally on goods issue.
-export const agentStock = sqliteTable('agent_stock', {
-	hamperId: text('hamper_id')
-		.primaryKey()
-		.references(() => hampers.id),
-	hamperName: text('hamper_name').notNull(),
-	onHand: integer('on_hand').notNull().default(0),
-	issuedToday: integer('issued_today').notNull().default(0),
-	damaged: integer('damaged').notNull().default(0),
-});
+// Warehouse stock levels, decremented locally on goods issue.
+export const agentStock = sqliteTable(
+	'agent_stock',
+	{
+		warehouse: text('warehouse').notNull(),
+		hamperId: text('hamper_id')
+			.notNull()
+			.references(() => hampers.id),
+		hamperName: text('hamper_name').notNull(),
+		onHand: integer('on_hand').notNull().default(0),
+		issuedToday: integer('issued_today').notNull().default(0),
+		damaged: integer('damaged').notNull().default(0),
+	},
+	(t) => [primaryKey({ columns: [t.warehouse, t.hamperId] })],
+);
 
 // Agent's POS configuration — maps to ERPNext POS Profile (pulled).
 export const posProfiles = sqliteTable('pos_profiles', {
@@ -218,6 +223,7 @@ export const posTransactions = sqliteTable(
 		status: text('status', { enum: ['pending', 'synced', 'conflict'] })
 			.notNull()
 			.default('pending'),
+		conflictReason: text('conflict_reason'),
 		createdAt: text('created_at').notNull(),
 		syncedAt: text('synced_at'),
 		serverName: text('server_name'),

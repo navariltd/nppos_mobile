@@ -226,10 +226,22 @@ export function issueGoodsEntitlement(entitlementId: string): MutationResult {
 		return { ok: false, reason: 'No open POS session — open one from the dashboard first.' };
 	}
 
+	// Goods draw from the session profile's warehouse (stock is per warehouse).
+	const profile = db
+		.select()
+		.from(posProfiles)
+		.where(eq(posProfiles.id, session.posProfileId))
+		.get();
+	if (!profile) return { ok: false, reason: 'POS profile for this session not found.' };
+
 	const qty = ent.qty ?? 1;
-	const stock = db.select().from(agentStock).where(eq(agentStock.hamperId, ent.hamperId)).get();
+	const stock = db
+		.select()
+		.from(agentStock)
+		.where(and(eq(agentStock.warehouse, profile.warehouse), eq(agentStock.hamperId, ent.hamperId)))
+		.get();
 	if (!stock || stock.onHand < qty) {
-		return { ok: false, reason: 'Not enough stock in your warehouse.' };
+		return { ok: false, reason: `Not enough stock in ${profile.warehouse}.` };
 	}
 	const hamper = db.select().from(hampers).where(eq(hampers.id, ent.hamperId)).get();
 
@@ -258,7 +270,12 @@ export function issueGoodsEntitlement(entitlementId: string): MutationResult {
 				onHand: sql`${agentStock.onHand} - ${qty}`,
 				issuedToday: sql`${agentStock.issuedToday} + ${qty}`,
 			})
-			.where(eq(agentStock.hamperId, ent.hamperId!))
+			.where(
+				and(
+					eq(agentStock.warehouse, profile.warehouse),
+					eq(agentStock.hamperId, ent.hamperId!),
+				),
+			)
 			.run();
 		applyIssueSideEffects(
 			tx,
@@ -269,6 +286,7 @@ export function issueGoodsEntitlement(entitlementId: string): MutationResult {
 				entitlement: ent.id,
 				hamper: ent.hamperId,
 				qty,
+				warehouse: profile.warehouse, // Stock Entry source warehouse
 				voucherNo: voucher?.voucherNo,
 				beneficiary: beneficiary?.id,
 				posSession: session.id,
@@ -331,12 +349,17 @@ export function recordCardWithdrawal(entitlementId: string, amount: number): Mut
 // ---- stock adjustments ---------------------------------------------------------
 
 function adjustStock(
+	warehouse: string,
 	hamperId: string,
 	qty: number,
 	kind: 'return' | 'damaged',
 ): MutationResult {
 	if (qty <= 0) return { ok: false, reason: 'Quantity must be at least 1.' };
-	const stock = db.select().from(agentStock).where(eq(agentStock.hamperId, hamperId)).get();
+	const stock = db
+		.select()
+		.from(agentStock)
+		.where(and(eq(agentStock.warehouse, warehouse), eq(agentStock.hamperId, hamperId)))
+		.get();
 	if (!stock) return { ok: false, reason: 'Stock line not found.' };
 	if (stock.onHand < qty) {
 		return { ok: false, reason: `Only ${stock.onHand} on hand.` };
@@ -373,12 +396,12 @@ function adjustStock(
 				onHand: sql`${agentStock.onHand} - ${qty}`,
 				...(kind === 'damaged' ? { damaged: sql`${agentStock.damaged} + ${qty}` } : {}),
 			})
-			.where(eq(agentStock.hamperId, hamperId))
+			.where(and(eq(agentStock.warehouse, warehouse), eq(agentStock.hamperId, hamperId)))
 			.run();
 		tx.insert(outbox)
 			.values({
 				id,
-				payload: JSON.stringify({ kind: `stock_${kind}`, hamper: hamperId, qty }),
+				payload: JSON.stringify({ kind: `stock_${kind}`, warehouse, hamper: hamperId, qty }),
 				createdAt: nowIso(),
 			})
 			.run();
@@ -386,24 +409,28 @@ function adjustStock(
 	return { ok: true, transactionId: id };
 }
 
-export function returnStock(hamperId: string, qty: number): MutationResult {
-	return adjustStock(hamperId, qty, 'return');
+export function returnStock(warehouse: string, hamperId: string, qty: number): MutationResult {
+	return adjustStock(warehouse, hamperId, qty, 'return');
 }
 
-export function reportDamagedStock(hamperId: string, qty: number): MutationResult {
-	return adjustStock(hamperId, qty, 'damaged');
+export function reportDamagedStock(
+	warehouse: string,
+	hamperId: string,
+	qty: number,
+): MutationResult {
+	return adjustStock(warehouse, hamperId, qty, 'damaged');
 }
 
 // ---- POS session (opening / closing entry) ---------------------------------------
 
 // Start of shift. Syncs as an ERPNext POS Opening Entry (cash mode, one
 // balance row = the opening float).
-export function openPosSession(openingFloat: number): MutationResult {
+export function openPosSession(openingFloat: number, posProfileId: string): MutationResult {
 	if (openingFloat < 0) return { ok: false, reason: 'Opening float cannot be negative.' };
 	if (getOpenSession()) return { ok: false, reason: 'A session is already open.' };
 
-	const profile = db.select().from(posProfiles).limit(1).get();
-	if (!profile) return { ok: false, reason: 'No POS profile on this device.' };
+	const profile = db.select().from(posProfiles).where(eq(posProfiles.id, posProfileId)).get();
+	if (!profile) return { ok: false, reason: 'POS profile not found on this device.' };
 
 	const id = uuid();
 	db.transaction((tx) => {
@@ -489,52 +516,5 @@ export function closePosSession(countedCash?: number): MutationResult {
 	return { ok: true, transactionId: closeId };
 }
 
-// ---- dev-only sync stub ---------------------------------------------------------
-
-// Pretends the sync engine flushed the outbox: pending → synced with a fake
-// server doc name, sessions get their POS Opening/Closing Entry names, and the
-// queue empties. Replaced by the real engine (ARCHITECTURE.md §4) later.
-export function simulateSyncFlush(): number {
-	const fakeNo = () => String(Math.floor(Math.random() * 90000) + 10000);
-
-	const pending = db
-		.select()
-		.from(posTransactions)
-		.where(eq(posTransactions.status, 'pending'))
-		.all();
-	const unsyncedSessions = db
-		.select()
-		.from(posSessions)
-		.all()
-		.filter((s) => !s.openingServerName || (s.status === 'closed' && !s.closingServerName));
-	const queued = db.select({ id: outbox.id }).from(outbox).all().length;
-
-	db.transaction((tx) => {
-		for (const t of pending) {
-			const prefix =
-				t.type === 'cash_payment' ? 'ACC-PAY-2026-' : t.type === 'card_withdrawal' ? 'BANK-' : 'MAT-STE-2026-';
-			tx.update(posTransactions)
-				.set({
-					status: 'synced',
-					syncedAt: nowIso(),
-					serverName: `${prefix}${fakeNo()}`,
-				})
-				.where(eq(posTransactions.id, t.id))
-				.run();
-		}
-		for (const s of unsyncedSessions) {
-			tx.update(posSessions)
-				.set({
-					openingServerName: s.openingServerName ?? `POS-OPE-2026-${fakeNo()}`,
-					closingServerName:
-						s.status === 'closed'
-							? (s.closingServerName ?? `POS-CLO-2026-${fakeNo()}`)
-							: s.closingServerName,
-				})
-				.where(eq(posSessions.id, s.id))
-				.run();
-		}
-		tx.delete(outbox).run();
-	});
-	return queued;
-}
+// The dev-only simulateSyncFlush stub used to live here — replaced by the real
+// engine: features/sync/engine.ts flushing through the ApiAdapter.

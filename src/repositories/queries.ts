@@ -198,8 +198,13 @@ export function useHamper(id?: string): Hamper | undefined {
 
 // ---- stock -----------------------------------------------------------------------
 
-export function useAgentStock(): AgentStockRow[] {
-	const { data } = useLiveQuery(db.select().from(agentStock));
+// Stock is per warehouse (backend: Bin) — pass the active POS profile's
+// warehouse. No warehouse → no rows, never a cross-warehouse mix.
+export function useAgentStock(warehouse?: string): AgentStockRow[] {
+	const { data } = useLiveQuery(
+		db.select().from(agentStock).where(eq(agentStock.warehouse, warehouse ?? NONE)),
+		[warehouse],
+	);
 	return data ?? [];
 }
 
@@ -259,9 +264,19 @@ export function useSyncCounts(): { pending: number; conflicts: number } {
 
 // ---- POS profile & sessions --------------------------------------------------
 
-export function usePosProfile(): PosProfile | undefined {
-	const { data } = useLiveQuery(db.select().from(posProfiles).limit(1));
+export function usePosProfile(id?: string): PosProfile | undefined {
+	const { data } = useLiveQuery(
+		db.select().from(posProfiles).where(eq(posProfiles.id, id ?? NONE)),
+		[id],
+	);
 	return data?.[0];
+}
+
+// All profiles on this device — the post-login "choose your POS profile"
+// screen. Real builds only ever pull profiles applicable to the logged-in user.
+export function usePosProfiles(): PosProfile[] {
+	const { data } = useLiveQuery(db.select().from(posProfiles).orderBy(posProfiles.name));
+	return data ?? [];
 }
 
 // The one session currently open (at most one at a time — enforced on open).

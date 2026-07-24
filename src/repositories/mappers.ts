@@ -82,6 +82,7 @@ export function toTransaction(r: typeof posTransactions.$inferSelect): PosTransa
 		projectId: r.projectId,
 		disbursementOrderId: r.disbursementOrderId,
 		status: r.status,
+		conflictReason: r.conflictReason ?? undefined,
 		createdAt: r.createdAt,
 		serverName: r.serverName ?? undefined,
 	};

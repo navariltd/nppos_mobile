@@ -32,9 +32,19 @@ export interface DisbursementOrder {
 	issuedCount: number;
 }
 
+// Agent Disbursement Assignment — the agent's per-DO slice (docs/FRAPPE_BACKEND.md).
+export interface Assignment {
+	id: string;
+	disbursementOrderId: string;
+	agentId: string;
+	date?: string;
+	amountToDisburse: number;
+}
+
 export interface Agent {
 	id: string;
 	name: string;
+	email: string; // login identity (backend: Frappe user)
 	code: string; // warehouse code
 	role: Role;
 	region: string;
@@ -132,6 +142,7 @@ export interface VoucherRedemption {
 }
 
 export interface AgentStockRow {
+	warehouse: string; // the POS profile's warehouse this stock belongs to
 	hamperId: string;
 	hamperName: string;
 	onHand: number;
@@ -154,6 +165,7 @@ export interface PosTransaction {
 	projectId: string;
 	disbursementOrderId: string;
 	status: SyncStatus;
+	conflictReason?: string; // server rejection message (status 'conflict')
 	createdAt: string;
 	serverName?: string;
 }

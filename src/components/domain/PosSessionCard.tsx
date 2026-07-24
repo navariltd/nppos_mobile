@@ -17,13 +17,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import { useActivePosProfile } from '@/hooks/pos-profile';
 import { formatKES, formatTime } from '@/lib/format';
-import {
-	openPosSession,
-	useOpenPosSession,
-	usePosProfile,
-	useSessionCashTotal,
-} from '@/repositories';
+import { openPosSession, useOpenPosSession, useSessionCashTotal } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { PlayCircle, StopCircle } from 'lucide-react-native';
 import * as React from 'react';
@@ -31,14 +27,18 @@ import { Alert, View } from 'react-native';
 
 export function PosSessionCard() {
 	const router = useRouter();
-	const profile = usePosProfile();
+	const profile = useActivePosProfile();
 	const session = useOpenPosSession();
 	const cashPaid = useSessionCashTotal(session?.id);
 	const [dialogOpen, setDialogOpen] = React.useState(false);
 	const [float, setFloat] = React.useState('');
 
 	const open = () => {
-		const result = openPosSession(Number(float) || 0);
+		if (!profile) {
+			Alert.alert('Could not open session', 'No active POS profile.');
+			return;
+		}
+		const result = openPosSession(Number(float) || 0, profile.id);
 		setDialogOpen(false);
 		setFloat('');
 		if (!result.ok) Alert.alert('Could not open session', result.reason);

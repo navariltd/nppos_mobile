@@ -17,7 +17,7 @@ import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { currentAgent } from '@/data/mock';
+import { useActivePosProfile } from '@/hooks/pos-profile';
 import { reportDamagedStock, returnStock, useAgentStock } from '@/repositories';
 import type { AgentStockRow } from '@/types/domain';
 import { TriangleAlert, Undo2 } from 'lucide-react-native';
@@ -27,7 +27,8 @@ import { Alert, View } from 'react-native';
 type Adjust = { row: AgentStockRow; kind: 'return' | 'damaged' };
 
 export default function Stock() {
-	const agentStock = useAgentStock();
+	const profile = useActivePosProfile();
+	const agentStock = useAgentStock(profile?.warehouse);
 	const [adjust, setAdjust] = React.useState<Adjust | null>(null);
 	const [qty, setQty] = React.useState('1');
 
@@ -45,8 +46,8 @@ export default function Stock() {
 		const n = Number(qty) || 0;
 		const result =
 			adjust.kind === 'return'
-				? returnStock(adjust.row.hamperId, n)
-				: reportDamagedStock(adjust.row.hamperId, n);
+				? returnStock(adjust.row.warehouse, adjust.row.hamperId, n)
+				: reportDamagedStock(adjust.row.warehouse, adjust.row.hamperId, n);
 		setAdjust(null);
 		if (!result.ok) {
 			Alert.alert('Could not record', result.reason);
@@ -58,7 +59,7 @@ export default function Stock() {
 			<View>
 				<Text variant="h3">Stock</Text>
 				<Text className="text-muted-foreground mt-0.5 text-sm">
-					{currentAgent.code} · agent warehouse
+					{profile ? `${profile.warehouse} · ${profile.name}` : 'no active POS profile'}
 				</Text>
 			</View>
 

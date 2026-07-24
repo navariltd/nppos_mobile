@@ -38,7 +38,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before 
 1. Domain data lives in SQLite; Redux holds no domain rows.
 2. All writes are offline-capable **except** the card/bank flow — it requires connectivity; disable it in the UI when offline.
 3. Every mutation gets a client UUID before it leaves the device; sync must be idempotent and retry-safe.
-4. Voucher limit (2 uses) and validity are validated locally at issue time **and** re-validated server-side at sync; conflicts land in a review state, never silently dropped.
+4. Voucher limit (2 uses) and validity are validated locally at issue time **and** re-validated server-side at sync; conflicts land in a review state, never silently dropped. Conflict resolution is an **admin** action and happens **online**.
 5. All transactions carry project + disbursement-order references.
 6. The API layer is an interface (`ApiAdapter`): `MockAdapter` (dummy data, default now) and later `FrappeAdapter`. Screens/hooks never import an adapter directly.
 

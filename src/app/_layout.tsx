@@ -1,9 +1,9 @@
 import '../../global.css';
 
 import { DbProvider } from '@/db/provider';
-import { OnlineProvider } from '@/hooks/online';
-import { SessionProvider } from '@/hooks/session';
+import { SyncManager } from '@/features/sync/SyncManager';
 import { ThemeModeProvider, useThemeMode } from '@/hooks/theme';
+import { StoreProvider } from '@/store/provider';
 import { FONTS, NAV_THEME, THEME } from '@/lib/theme';
 import {
 	SpaceGrotesk_500Medium,
@@ -45,6 +45,7 @@ function RootNavigator() {
 			>
 				<Stack.Screen name="(app)" />
 				<Stack.Screen name="login" options={{ animation: 'fade' }} />
+				<Stack.Screen name="select-profile" options={{ animation: 'fade' }} />
 				<Stack.Screen name="+not-found" />
 			</Stack>
 			<PortalHost />
@@ -59,23 +60,23 @@ export default function RootLayout() {
 		SpaceGrotesk_700Bold,
 	});
 
-	// Proper splash handling lands with redux/session restore; until then
-	// hold a blank frame while the display font loads.
+	// Hold a blank frame while the display font loads; StoreProvider's
+	// PersistGate holds the tree until the persisted session rehydrates.
 	if (!fontsLoaded) {
 		return null;
 	}
 
 	return (
 		<SafeAreaProvider>
-			<DbProvider>
-				<ThemeModeProvider>
-					<SessionProvider>
-						<OnlineProvider>
-							<RootNavigator />
-						</OnlineProvider>
-					</SessionProvider>
-				</ThemeModeProvider>
-			</DbProvider>
+			<StoreProvider>
+				<DbProvider>
+					<ThemeModeProvider>
+						{/* below DbProvider — the sync engine reads SQLite */}
+						<SyncManager />
+						<RootNavigator />
+					</ThemeModeProvider>
+				</DbProvider>
+			</StoreProvider>
 		</SafeAreaProvider>
 	);
 }

@@ -114,8 +114,11 @@ export default function TransactionDetail() {
 					<AlertBanner icon={CircleAlert} className="border-destructive/30 bg-destructive/10">
 						<AlertTitle className="text-destructive">Needs review</AlertTitle>
 						<AlertDescription className="text-destructive">
-							The server rejected this transaction during sync (e.g. voucher limit or validity
-							failed re-validation). It is held for review — nothing is silently dropped.
+							{txn.conflictReason
+								? `Server: ${txn.conflictReason}`
+								: 'The server rejected this transaction during sync (e.g. voucher limit or validity failed re-validation).'}
+							{'\n'}Held for review — an admin resolves this online; nothing is silently
+							dropped.
 						</AlertDescription>
 					</AlertBanner>
 				) : txn.status === 'pending' ? (

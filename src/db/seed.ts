@@ -40,16 +40,7 @@ export function seedIfEmpty(): void {
 			)
 			.run();
 
-		// The agent's POS configuration (backend: ERPNext POS Profile).
-		tx.insert(posProfiles)
-			.values({
-				id: 'POSP-001',
-				name: `Agent POS · ${mock.currentAgent.code}`,
-				agentId: mock.currentAgent.id,
-				warehouse: mock.currentAgent.code,
-				currency: 'KES',
-			})
-			.run();
+		tx.insert(posProfiles).values(mock.posProfiles).run();
 
 		// mock.ts has no assignments export; beneficiaries point at ASG-01
 		tx.insert(assignments)

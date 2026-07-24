@@ -19,16 +19,18 @@ import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
 import { useOnline } from '@/hooks/online';
+import { useActivePosProfile } from '@/hooks/pos-profile';
 import { formatKES, formatTime } from '@/lib/format';
+import { syncNow } from '@/features/sync/engine';
 import {
 	closePosSession,
-	simulateSyncFlush,
 	useAgentStock,
 	useOpenPosSession,
 	useSessionCashTotal,
 	useSyncCounts,
 	useTransactions,
 } from '@/repositories';
+import { useAppDispatch } from '@/store/hooks';
 import { useRouter } from 'expo-router';
 import { ClipboardCheck, TriangleAlert } from 'lucide-react-native';
 import * as React from 'react';
@@ -37,9 +39,11 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function Reconciliation() {
 	const router = useRouter();
+	const dispatch = useAppDispatch();
 
 	const transactions = useTransactions();
-	const agentStock = useAgentStock();
+	const profile = useActivePosProfile();
+	const agentStock = useAgentStock(profile?.warehouse);
 	const { pending, conflicts } = useSyncCounts();
 	const session = useOpenPosSession();
 	const sessionCash = useSessionCashTotal(session?.id);
@@ -50,7 +54,7 @@ export default function Reconciliation() {
 
 	// Closing a session is the reconcile moment: record the closing entry, then
 	// flush the outbox right away if we're online (docs/NPPOS_WEB.md §policy).
-	const submitClose = () => {
+	const submitClose = async () => {
 		if (!session) return;
 		const result = closePosSession(Number(counted) || 0);
 		if (!result.ok) {
@@ -58,12 +62,20 @@ export default function Reconciliation() {
 			return;
 		}
 		if (isOnline) {
-			const flushed = simulateSyncFlush();
-			Alert.alert(
-				'Session closed & synced',
-				`POS Closing Entry submitted and ${flushed} queued item${flushed === 1 ? '' : 's'} synced (simulated).`,
-				[{ text: 'Done', onPress: () => router.back() }],
-			);
+			try {
+				const r = await dispatch(syncNow()).unwrap();
+				Alert.alert(
+					'Session closed & synced',
+					`POS Closing Entry submitted — ${r.pushed} item${r.pushed === 1 ? '' : 's'} synced${r.conflicts ? `, ${r.conflicts} need review` : ''}.`,
+					[{ text: 'Done', onPress: () => router.back() }],
+				);
+			} catch {
+				Alert.alert(
+					'Session closed',
+					'Sync did not finish — everything is queued and will retry automatically.',
+					[{ text: 'Done', onPress: () => router.back() }],
+				);
+			}
 		} else {
 			Alert.alert(
 				'Session closed',

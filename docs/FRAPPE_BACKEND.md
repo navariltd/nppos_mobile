@@ -116,8 +116,8 @@ in ERPNext core are GL internals, still unrelated.)
 | `vouchers` | **Entitlement Voucher** (agent's slice) |
 | `entitlements` | Derived from ADA rows (cash amount) + DO items (goods) + Entitlement Voucher |
 | `hampers`, `hamper_items` | Item / BOM referenced by the DO |
-| `agent_stock` | Bin levels of the agent's warehouse |
-| `pos_profiles` | **POS Profile** for the logged-in agent |
+| `agent_stock` | Bin levels **per POS-profile warehouse** (rows keyed warehouse + item) |
+| `pos_profiles` | **POS Profile**s applicable to the logged-in user (one is picked after login as the working context) |
 
 | Local table (push) | Backend target |
 |---|---|

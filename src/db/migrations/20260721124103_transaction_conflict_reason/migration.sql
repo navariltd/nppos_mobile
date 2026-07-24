@@ -1,0 +1,1 @@
+ALTER TABLE `pos_transactions` ADD `conflict_reason` text;

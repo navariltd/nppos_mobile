@@ -7,12 +7,16 @@ import { Redirect, Stack } from 'expo-router';
 // reconciliation/admin) are sibling stack screens that push full-screen over the
 // tab bar — an agent mid-transaction can't accidentally switch tabs.
 export default function AppLayout() {
-	const { isAuthenticated } = useSession();
+	const { isAuthenticated, activePosProfileId } = useSession();
 	const { scheme } = useThemeMode();
 	const t = THEME[scheme];
 
 	if (!isAuthenticated) {
 		return <Redirect href="/login" />;
+	}
+	// Logged in but no working context yet — step 2 of login.
+	if (!activePosProfileId) {
+		return <Redirect href="/select-profile" />;
 	}
 
 	return (

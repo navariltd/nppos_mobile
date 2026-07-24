@@ -8,6 +8,7 @@ import { Text } from '@/components/ui/text';
 import { currentAgent } from '@/data/mock';
 import { useOnline } from '@/hooks/online';
 import { useSession } from '@/hooks/session';
+import { useActivePosProfile } from '@/hooks/pos-profile';
 import { useAgentStock, useDisbursementOrders, useSyncCounts } from '@/repositories';
 import { useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
@@ -34,7 +35,8 @@ export default function Dashboard() {
 	const { role } = useSession();
 	const { pending, conflicts } = useSyncCounts();
 	const disbursementOrders = useDisbursementOrders();
-	const agentStock = useAgentStock();
+	const profile = useActivePosProfile();
+	const agentStock = useAgentStock(profile?.warehouse);
 
 	const primaryDO = disbursementOrders[0];
 	const progress = primaryDO

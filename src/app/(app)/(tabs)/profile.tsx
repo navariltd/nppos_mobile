@@ -19,14 +19,11 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
-import { currentAgent } from '@/data/mock';
 import { useOnline } from '@/hooks/online';
-import {
-	closePosSession,
-	simulateSyncFlush,
-	useOpenPosSession,
-	useSyncCounts,
-} from '@/repositories';
+import { useActivePosProfile } from '@/hooks/pos-profile';
+import { syncNow } from '@/features/sync/engine';
+import { closePosSession, useOpenPosSession, useSyncCounts } from '@/repositories';
+import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { useSession } from '@/hooks/session';
 import { useThemeMode, type ThemeMode } from '@/hooks/theme';
 import { initials } from '@/lib/format';
@@ -42,6 +39,7 @@ import {
 	MonitorSmartphone,
 	Moon,
 	RefreshCw,
+	Store,
 	Sun,
 	Wifi,
 	type LucideIcon,
@@ -82,18 +80,39 @@ const Chevron = <Icon as={ChevronRight} size={19} className="text-muted-foregrou
 
 export default function Profile() {
 	const router = useRouter();
-	const { name, role, setRole, signOut } = useSession();
-	const { isOnline, toggle } = useOnline();
+	const dispatch = useAppDispatch();
+	const isSyncing = useAppSelector((s) => s.sync.isSyncing);
+	const { name, role, agent, setRole, signOut } = useSession();
+	const { isOnline, deviceOnline, forcedOffline, setForcedOffline } = useOnline();
 	const { mode, scheme, setMode } = useThemeMode();
 	const { pending, conflicts } = useSyncCounts();
 	const openSession = useOpenPosSession();
+	const posProfile = useActivePosProfile();
+
+	// Switching the working context mid-shift would orphan the open session's
+	// float/expected-cash math — demand a proper close (reconciliation) first.
+	const handleSwitchProfile = () => {
+		if (openSession) {
+			Alert.alert(
+				'Session open',
+				'Close your POS session (End-of-Day Reconciliation) before switching profiles.',
+			);
+			return;
+		}
+		router.push('/select-profile');
+	};
 
 	// Never leave a session dangling: sign-out auto-closes it (counted cash
-	// defaults to expected, flagged autoClosed) and syncs if we're online.
+	// defaults to expected, flagged autoClosed) and kicks a sync if online —
+	// fire-and-forget; anything unsent stays queued for the next login.
 	const handleSignOut = () => {
 		if (openSession) {
 			closePosSession();
-			if (isOnline) simulateSyncFlush();
+			if (isOnline) {
+				dispatch(syncNow())
+					.unwrap()
+					.catch(() => {});
+			}
 		}
 		signOut();
 		router.replace('/login');
@@ -119,7 +138,7 @@ export default function Profile() {
 						<View className="flex-1">
 							<Text className="font-display-semibold text-lg">{name}</Text>
 							<Text className="text-muted-foreground text-sm">
-								{currentAgent.code} · {currentAgent.region}
+								{agent ? `${agent.email} · ${agent.region}` : ''}
 							</Text>
 							<Badge variant="secondary" className="mt-1.5 self-start">
 								<Text className="capitalize">{role}</Text>
@@ -135,7 +154,20 @@ export default function Profile() {
 						icon={isOnline ? Wifi : CloudOff}
 						iconClassName={isOnline ? 'text-success' : 'text-muted-foreground'}
 						label="Connectivity"
-						right={<Switch checked={isOnline} onCheckedChange={toggle} />}
+						value={
+							deviceOnline
+								? forcedOffline
+									? 'offline (simulated)'
+									: 'online'
+								: 'no connection'
+						}
+					/>
+					<Separator />
+					<Row
+						icon={CloudOff}
+						iconClassName={forcedOffline ? 'text-warning' : 'text-foreground/70'}
+						label="Simulate offline"
+						right={<Switch checked={forcedOffline} onCheckedChange={setForcedOffline} />}
 					/>
 					<Separator />
 					<Row
@@ -154,19 +186,27 @@ export default function Profile() {
 					<Separator />
 					<Row
 						icon={RefreshCw}
-						label="Sync now"
-						onPress={() => {
+						label={isSyncing ? 'Syncing…' : 'Sync now'}
+						onPress={async () => {
 							if (!isOnline) {
 								Alert.alert('Sync', 'Offline — cannot sync right now.');
 								return;
 							}
-							const flushed = simulateSyncFlush();
-							Alert.alert(
-								'Sync',
-								flushed > 0
-									? `${flushed} transaction${flushed > 1 ? 's' : ''} synced (simulated).`
-									: 'Nothing pending — all synced.',
-							);
+							if (isSyncing) return;
+							try {
+								const r = await dispatch(syncNow()).unwrap();
+								Alert.alert(
+									'Sync',
+									r.pushed + r.conflicts === 0
+										? 'Nothing pending — all synced.'
+										: `${r.pushed} synced${r.conflicts ? `, ${r.conflicts} need review` : ''}.`,
+								);
+							} catch (e) {
+								Alert.alert(
+									'Sync failed',
+									(e as { message?: string })?.message ?? 'Try again shortly.',
+								);
+							}
 						}}
 						right={Chevron}
 					/>
@@ -203,6 +243,14 @@ export default function Profile() {
 
 			<Animated.View entering={FadeInDown.duration(300).delay(210)}>
 				<Card className="overflow-hidden py-0">
+					<Row
+						icon={Store}
+						label="POS profile"
+						value={posProfile ? `${posProfile.name} · ${posProfile.warehouse}` : 'none'}
+						onPress={handleSwitchProfile}
+						right={Chevron}
+					/>
+					<Separator />
 					<Row
 						icon={ArrowLeftRight}
 						label={`Switch to ${role === 'agent' ? 'admin' : 'agent'} view`}
