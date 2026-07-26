@@ -28,8 +28,8 @@ import { useSession } from '@/hooks/session';
 import { useThemeMode, type ThemeMode } from '@/hooks/theme';
 import { initials } from '@/lib/format';
 import { useRouter } from 'expo-router';
+import Constants from 'expo-constants';
 import {
-	ArrowLeftRight,
 	ChevronRight,
 	CircleAlert,
 	CloudOff,
@@ -250,13 +250,13 @@ export default function Profile() {
 						onPress={handleSwitchProfile}
 						right={Chevron}
 					/>
-					<Separator />
+					{/* <Separator />
 					<Row
 						icon={ArrowLeftRight}
 						label={`Switch to ${role === 'agent' ? 'admin' : 'agent'} view`}
 						onPress={() => setRole(role === 'agent' ? 'admin' : 'agent')}
 						right={Chevron}
-					/>
+					/> */}
 					<Separator />
 					<Row
 						icon={LockKeyhole}
@@ -296,7 +296,7 @@ export default function Profile() {
 				</AlertDialog>
 
 				<Text className="text-muted-foreground text-center text-xs">
-					NPPOS v1.0.0 · dummy-data build
+					{`${Constants.expoConfig?.name} v${Constants.expoConfig?.version}`}
 				</Text>
 			</Animated.View>
 		</Screen>

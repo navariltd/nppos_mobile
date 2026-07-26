@@ -1,5 +1,6 @@
 import '../../global.css';
 
+import { BootSequence } from '@/components/brand/BootSequence';
 import { DbProvider } from '@/db/provider';
 import { SyncManager } from '@/features/sync/SyncManager';
 import { ThemeModeProvider, useThemeMode } from '@/hooks/theme';
@@ -14,6 +15,7 @@ import {
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
 import { Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -21,6 +23,10 @@ export {
 	// Catch any errors thrown by the Layout component.
 	ErrorBoundary,
 } from 'expo-router';
+
+// Hold the native splash until the animated BrandSplash paints its first frame
+// and hides it — that handoff is what makes the transition seamless.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Sits inside ThemeModeProvider so nav chrome re-themes with the scheme.
 function RootNavigator() {
@@ -73,7 +79,10 @@ export default function RootLayout() {
 					<ThemeModeProvider>
 						{/* below DbProvider — the sync engine reads SQLite */}
 						<SyncManager />
-						<RootNavigator />
+						{/* Animated splash → first-run onboarding → app */}
+						<BootSequence>
+							<RootNavigator />
+						</BootSequence>
 					</ThemeModeProvider>
 				</DbProvider>
 			</StoreProvider>

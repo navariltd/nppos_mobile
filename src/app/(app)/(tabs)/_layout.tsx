@@ -4,9 +4,9 @@ import { Tabs } from 'expo-router';
 import {
 	Boxes,
 	CircleUserRound,
-	History,
 	LayoutGrid,
-	UsersRound,
+	Receipt,
+	Ticket,
 	type LucideIcon,
 } from 'lucide-react-native';
 
@@ -34,13 +34,10 @@ export default function TabLayout() {
 			}}
 		>
 			<Tabs.Screen name="index" options={{ title: 'Dashboard', tabBarIcon: icon(LayoutGrid) }} />
-			<Tabs.Screen
-				name="beneficiaries"
-				options={{ title: 'People', tabBarIcon: icon(UsersRound) }}
-			/>
+			<Tabs.Screen name="search" options={{ title: 'Search', tabBarIcon: icon(Ticket) }} />
 			<Tabs.Screen
 				name="transactions"
-				options={{ title: 'Activity', tabBarIcon: icon(History) }}
+				options={{ title: 'Transactions', tabBarIcon: icon(Receipt) }}
 			/>
 			<Tabs.Screen name="stock" options={{ title: 'Stock', tabBarIcon: icon(Boxes) }} />
 			<Tabs.Screen

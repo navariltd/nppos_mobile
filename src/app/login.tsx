@@ -2,27 +2,33 @@ import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { useSession } from '@/hooks/session';
 import type { Role } from '@/types/domain';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
-import { AtSign, HeartHandshake, LockKeyhole } from 'lucide-react-native';
+import { AtSign, Eye, EyeOff, LockKeyhole } from 'lucide-react-native';
 import * as React from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
+import {
+	Alert,
+	Image,
+	KeyboardAvoidingView,
+	Platform,
+	Pressable,
+	ScrollView,
+	View,
+} from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function Login() {
 	const { signIn, isSigningIn } = useSession();
 	const router = useRouter();
-	const [email, setEmail] = React.useState('whitenile@navari.co.ke');
-	const [password, setPassword] = React.useState('Training@2026');
+	const [email, setEmail] = React.useState('');
+	const [password, setPassword] = React.useState('');
+	const [showPassword, setShowPassword] = React.useState(false);
 	const [role, setRole] = React.useState<Role>('agent');
 
-	// System login via the ApiAdapter (MockAdapter now — any password works).
-	// Next stop is choosing the POS profile to work under.
 	const onSubmit = async () => {
 		const result = await signIn({ email, password, role });
 		if (!result.ok) {
@@ -54,7 +60,11 @@ export default function Login() {
 							entering={FadeInDown.duration(400)}
 							className="h-16 w-16 items-center justify-center rounded-2xl bg-white/10"
 						>
-							<Icon as={HeartHandshake} size={32} className="text-primary-foreground" />
+							{/* <Icon as={HeartHandshake} size={32} className="text-primary-foreground" /> */}
+							<Image
+								source={require('../../assets/app-images/nppos.png')}
+								style={{ width: 48, height: 48 }}
+							/>
 						</Animated.View>
 						<Animated.View entering={FadeInDown.duration(400).delay(80)} className="items-center">
 							<Text className="text-primary-foreground font-display text-4xl tracking-tight">
@@ -69,7 +79,7 @@ export default function Login() {
 					{/* Paper panel */}
 					<Animated.View
 						entering={FadeInUp.duration(420).delay(120)}
-						className="bg-background flex-1 rounded-t-[28px] px-6 pb-8 pt-8"
+						className="bg-background grow rounded-t-[28px] px-6 pb-8 pt-8"
 					>
 						<View className="gap-5">
 							<View className="gap-1">
@@ -93,6 +103,7 @@ export default function Login() {
 										autoComplete="email"
 										keyboardType="email-address"
 										className="h-12 pl-10"
+										placeholder="admin@navari.co.ke"
 									/>
 								</View>
 							</View>
@@ -108,13 +119,28 @@ export default function Login() {
 										value={password}
 										onChangeText={setPassword}
 										placeholder="••••••••"
-										secureTextEntry
-										className="h-12 pl-10"
+										secureTextEntry={!showPassword}
+										autoCapitalize="none"
+										autoComplete="password"
+										className="h-12 pl-10 pr-11"
 									/>
+									<Pressable
+										onPress={() => setShowPassword((v) => !v)}
+										hitSlop={10}
+										accessibilityRole="button"
+										accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+										className="absolute right-3 z-10 active:opacity-60"
+									>
+										<Icon
+											as={showPassword ? EyeOff : Eye}
+											size={18}
+											className="text-muted-foreground"
+										/>
+									</Pressable>
 								</View>
 							</View>
 
-							<View className="gap-2">
+							{/* <View className="gap-2">
 								<Label>Sign in as</Label>
 								<Tabs value={role} onValueChange={(v) => setRole(v as Role)}>
 									<TabsList className="h-11 w-full">
@@ -126,15 +152,11 @@ export default function Login() {
 										</TabsTrigger>
 									</TabsList>
 								</Tabs>
-							</View>
+							</View> */}
 
 							<Button size="lg" className="mt-1" onPress={onSubmit} disabled={isSigningIn}>
 								<Text>{isSigningIn ? 'Signing in…' : 'Sign in'}</Text>
 							</Button>
-
-							<Text className="text-muted-foreground text-center text-xs">
-								Dummy data build — any password works. First login is online-only.
-							</Text>
 						</View>
 					</Animated.View>
 					</ScrollView>

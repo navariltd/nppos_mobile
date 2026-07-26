@@ -25,9 +25,11 @@ export interface MockAdapterOptions {
 	failRate?: number; // 0..1 — chance a call throws a retryable ApiError (network)
 }
 
+// Voucher redemptions submit as an Entitlement Redemption; the Payment/Stock
+// Entry comes out automatically (docs/NPPOS_WEB.md), surfaced via relatedNames.
 const SERVER_PREFIX: Record<PushItem['payload']['kind'], string> = {
-	cash_payment: 'ACC-PAY-2026-',
-	goods_issue: 'MAT-STE-2026-',
+	cash_payment: 'ENT-RED-2026-07-',
+	goods_issue: 'ENT-RED-2026-07-',
 	stock_return: 'MAT-STE-2026-',
 	stock_damaged: 'MAT-STE-2026-',
 	pos_opening: 'POS-OPE-2026-',
@@ -36,7 +38,7 @@ const SERVER_PREFIX: Record<PushItem['payload']['kind'], string> = {
 
 const REJECT_REASON: Record<PushItem['payload']['kind'], string> = {
 	cash_payment: 'Voucher already redeemed on another device.',
-	goods_issue: 'Entitlement was revoked on the backend.',
+	goods_issue: 'Voucher already redeemed on another device.',
 	stock_return: 'Stock line does not match warehouse records.',
 	stock_damaged: 'Stock line does not match warehouse records.',
 	pos_opening: 'Another opening entry exists for this profile today.',
@@ -86,9 +88,12 @@ export class MockAdapter implements ApiAdapter {
 			outcome: 'accepted',
 			serverName: `${SERVER_PREFIX[kind]}${fakeNo()}`,
 		};
-		// Voucher flows also produce an Entitlement Redemption (docs/NPPOS_WEB.md).
-		if ((kind === 'cash_payment' || kind === 'goods_issue') && 'voucherNo' in item.payload && item.payload.voucherNo) {
-			result.relatedNames = { entitlementRedemption: `ENT-RED-2026-07-${fakeNo()}` };
+		// The Entitlement Redemption auto-creates a Payment/Stock Entry on submit
+		// (docs/NPPOS_WEB.md) — surface it as a related doc.
+		if (kind === 'cash_payment') {
+			result.relatedNames = { paymentEntry: `ACC-PAY-2026-${fakeNo()}` };
+		} else if (kind === 'goods_issue') {
+			result.relatedNames = { stockEntry: `MAT-STE-2026-${fakeNo()}` };
 		}
 		return result;
 	}
@@ -97,22 +102,14 @@ export class MockAdapter implements ApiAdapter {
 		await this.simulateTransport();
 		const now = new Date().toISOString();
 		return {
-			projects: [],
-			disbursementOrders: [],
 			assignments: [],
-			beneficiaries: [],
 			vouchers: [],
-			entitlements: [],
 			hampers: [],
 			agentStock: [],
 			posProfiles: [],
 			cursors: {
-				projects: now,
-				disbursementOrders: now,
 				assignments: now,
-				beneficiaries: now,
 				vouchers: now,
-				entitlements: now,
 				hampers: now,
 				agentStock: now,
 				posProfiles: now,

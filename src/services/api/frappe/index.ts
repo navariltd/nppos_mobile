@@ -1,9 +1,10 @@
 // FrappeAdapter — the real backend, speaking to three whitelisted methods in
-// the aigt_hdr Frappe app (the Python side; full contract in docs/SYNC_API.md):
+// the **nppos** Frappe app (the web POS that owns Entitlement Voucher /
+// Entitlement Redemption — NOT aigt_hdr; see docs/NPPOS_WEB.md):
 //
-//   POST /api/method/aigt_hdr.sync_api.login       { email, password }
-//   POST /api/method/aigt_hdr.sync_api.sync_push   { client_ref, created_at, payload }
-//   POST /api/method/aigt_hdr.sync_api.sync_pull   { cursors }
+//   POST /api/method/nppos.sync_api.login       { email, password }
+//   POST /api/method/nppos.sync_api.sync_push   { client_ref, created_at, payload }
+//   POST /api/method/nppos.sync_api.sync_pull   { cursors }
 //
 // Wire format is snake_case (natural for Frappe/Python); this adapter is the
 // only place that maps it to the app's camelCase domain types. Auth after
@@ -35,33 +36,15 @@ interface FrappeAgent {
 	region: string;
 }
 
-// sync_pull payload — snake_case rows, shapes documented in docs/SYNC_API.md.
+// sync_pull payload — snake_case rows, shapes documented in docs/NPPOS_WEB.md.
 interface FrappePull {
-	projects: { id: string; name: string; code: string }[];
-	disbursement_orders: {
-		id: string;
-		name: string;
-		project_id: string;
-		status: 'open' | 'closed';
-		total_beneficiaries: number;
-		issued_count: number;
-	}[];
 	assignments: {
 		id: string;
-		disbursement_order_id: string;
 		agent_id: string;
+		project: string;
+		disbursement_order?: string;
 		date?: string;
 		amount_to_disburse: number;
-	}[];
-	beneficiaries: {
-		id: string;
-		beneficiary_no: string;
-		name: string;
-		national_id?: string;
-		phone?: string;
-		household_size: number;
-		project_id: string;
-		assignment_id: string;
 	}[];
 	vouchers: {
 		id: string;
@@ -69,25 +52,19 @@ interface FrappePull {
 		beneficiary_no?: string;
 		entitlement_type: 'cash' | 'hamper';
 		amount: number;
+		hamper_id?: string;
+		qty?: number;
+		uom?: string;
+		rate?: number;
+		redeemed_amount: number;
+		redeemed_qty: number;
 		valid_from: string;
 		valid_to: string;
 		status: 'active' | 'partially_redeemed' | 'redeemed' | 'expired';
 		uses_count: number;
 		max_uses: number;
-		project_id: string;
-		disbursement_order_id: string;
-	}[];
-	entitlements: {
-		id: string;
-		type: 'hamper' | 'cash' | 'card';
-		hamper_id?: string;
-		qty?: number;
-		amount?: number;
-		status: 'available' | 'issued';
-		beneficiary_id?: string;
-		voucher_id?: string;
-		project_id: string;
-		disbursement_order_id: string;
+		project: string;
+		assignment_id?: string;
 	}[];
 	hampers: {
 		id: string;
@@ -170,11 +147,12 @@ export class FrappeAdapter implements ApiAdapter {
 	}
 
 	async login(req: LoginRequest): Promise<LoginResponse> {
+		this.token = null;
 		const m = await this.call<{
 			token: string;
 			agent: FrappeAgent;
 			pos_profiles: FrappePull['pos_profiles'];
-		}>('aigt_hdr.sync_api.login', {
+		}>('nppos.sync_api.login', {
 			email: req.email,
 			password: req.password,
 		});
@@ -205,7 +183,7 @@ export class FrappeAdapter implements ApiAdapter {
 			server_name?: string;
 			reason?: string;
 			related?: Record<string, string>;
-		}>('aigt_hdr.sync_api.sync_push', {
+		}>('nppos.sync_api.sync_push', {
 			client_ref: item.id, // idempotency key (custom_client_ref)
 			created_at: item.createdAt,
 			payload: item.payload,
@@ -221,33 +199,15 @@ export class FrappeAdapter implements ApiAdapter {
 	}
 
 	async pull(cursors: PullCursors): Promise<PullResponse> {
-		const m = await this.call<FrappePull>('aigt_hdr.sync_api.sync_pull', { cursors });
+		const m = await this.call<FrappePull>('nppos.sync_api.sync_pull', { cursors });
 		return {
-			projects: m.projects,
-			disbursementOrders: m.disbursement_orders.map((d) => ({
-				id: d.id,
-				name: d.name,
-				projectId: d.project_id,
-				status: d.status,
-				totalBeneficiaries: d.total_beneficiaries,
-				issuedCount: d.issued_count,
-			})),
 			assignments: m.assignments.map((a) => ({
 				id: a.id,
-				disbursementOrderId: a.disbursement_order_id,
 				agentId: a.agent_id,
+				project: a.project,
+				disbursementOrder: a.disbursement_order,
 				date: a.date,
 				amountToDisburse: a.amount_to_disburse,
-			})),
-			beneficiaries: m.beneficiaries.map((b) => ({
-				id: b.id,
-				beneficiaryNo: b.beneficiary_no,
-				name: b.name,
-				nationalId: b.national_id ?? '',
-				phone: b.phone ?? '',
-				householdSize: b.household_size,
-				projectId: b.project_id,
-				assignmentId: b.assignment_id,
 			})),
 			vouchers: m.vouchers.map((v) => ({
 				id: v.id,
@@ -255,25 +215,19 @@ export class FrappeAdapter implements ApiAdapter {
 				beneficiaryNo: v.beneficiary_no,
 				entitlementType: v.entitlement_type,
 				amount: v.amount,
+				hamperId: v.hamper_id,
+				qty: v.qty,
+				uom: v.uom,
+				rate: v.rate,
+				redeemedAmount: v.redeemed_amount,
+				redeemedQty: v.redeemed_qty,
 				validFrom: v.valid_from,
 				validTo: v.valid_to,
 				status: v.status,
 				usesCount: v.uses_count,
 				maxUses: v.max_uses,
-				projectId: v.project_id,
-				disbursementOrderId: v.disbursement_order_id,
-			})),
-			entitlements: m.entitlements.map((e) => ({
-				id: e.id,
-				type: e.type,
-				hamperId: e.hamper_id,
-				qty: e.qty,
-				amount: e.amount,
-				status: e.status,
-				beneficiaryId: e.beneficiary_id,
-				voucherId: e.voucher_id,
-				projectId: e.project_id,
-				disbursementOrderId: e.disbursement_order_id,
+				project: v.project,
+				assignmentId: v.assignment_id,
 			})),
 			hampers: m.hampers.map((h) => ({
 				id: h.id,

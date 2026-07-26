@@ -9,7 +9,7 @@ import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { formatDateTime, formatKES } from '@/lib/format';
-import { useProject, useTransaction } from '@/repositories';
+import { useTransaction } from '@/repositories';
 import { cn } from '@/lib/utils';
 import type { TransactionType } from '@/types/domain';
 import { useLocalSearchParams } from 'expo-router';
@@ -17,7 +17,6 @@ import {
 	CalendarClock,
 	CircleAlert,
 	CircleCheck,
-	ClipboardList,
 	CloudUpload,
 	FileText,
 	Fingerprint,
@@ -32,9 +31,8 @@ import Animated, { FadeInDown, ZoomIn } from 'react-native-reanimated';
 
 // How each local transaction lands in ERPNext once synced.
 const SYNCS_AS: Record<TransactionType, string> = {
-	goods_issue: 'Stock Entry · type Issue',
-	cash_payment: 'Payment Entry · type Pay',
-	card_withdrawal: 'Bank API transfer (real-time)',
+	goods_issue: 'Entitlement Redemption → Stock Entry (Issue)',
+	cash_payment: 'Entitlement Redemption → Payment Entry (Pay)',
 	stock_return: 'Stock Entry · type Return',
 };
 
@@ -66,7 +64,6 @@ function DetailRow({
 export default function TransactionDetail() {
 	const { id } = useLocalSearchParams<{ id: string }>();
 	const txn = useTransaction(id);
-	const project = useProject(txn?.projectId);
 
 	if (!txn) {
 		return (
@@ -147,12 +144,7 @@ export default function TransactionDetail() {
 							<DetailRow icon={UserRound} label="Beneficiary" value={txn.beneficiaryName} />
 						)}
 						{txn.voucherNo && <DetailRow icon={Ticket} label="Voucher" value={txn.voucherNo} />}
-						<DetailRow
-							icon={FolderOpen}
-							label="Project"
-							value={project ? `${project.code}` : txn.projectId}
-						/>
-						<DetailRow icon={ClipboardList} label="Disbursement order" value={txn.disbursementOrderId} />
+						<DetailRow icon={FolderOpen} label="Project" value={txn.project} />
 						<DetailRow icon={CalendarClock} label="Recorded" value={formatDateTime(txn.createdAt)} />
 					</CardContent>
 				</Card>

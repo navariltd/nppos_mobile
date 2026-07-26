@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/text';
 import { formatDateTime, formatKES } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { PosTransaction, TransactionType } from '@/types/domain';
-import { Banknote, CreditCard, Gift, Undo2, type LucideIcon } from 'lucide-react-native';
+import { Banknote, Gift, Undo2, type LucideIcon } from 'lucide-react-native';
 import { Pressable, View } from 'react-native';
 
 export const TXN_TYPE_STYLE: Record<
@@ -17,12 +17,6 @@ export const TXN_TYPE_STYLE: Record<
 		plate: 'bg-success/10',
 		tint: 'text-success',
 		label: 'Cash payment',
-	},
-	card_withdrawal: {
-		icon: CreditCard,
-		plate: 'bg-info/10',
-		tint: 'text-info',
-		label: 'Card withdrawal',
 	},
 	stock_return: {
 		icon: Undo2,

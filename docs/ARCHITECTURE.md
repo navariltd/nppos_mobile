@@ -2,6 +2,17 @@
 
 Offline-first POS app for HDR goods & cash disbursement. Backend = Frappe/ERPNext (exists already, out of scope). This document is the blueprint; `AGENTS.md` holds the condensed rules.
 
+> **Model note (voucher-centric).** The app mirrors the **nppos web POS**: the
+> only domain objects an agent touches are **Entitlement Vouchers** and
+> **Entitlement Redemptions**. A voucher carries its entitlement **inline**
+> (Goods *or* Cash — no separate entitlements table). The agent never browses
+> beneficiaries or projects/DOs; the agent-scoped **ADA (`assignments`)** is the
+> only grouping that reaches the device, and `project` rides on the voucher as a
+> plain name string. The later `FrappeAdapter` targets the **nppos** Frappe app's
+> whitelisted methods (`nppos.sync_api.*`), *not* aigt_hdr. Some sections below
+> still describe the earlier broader model (beneficiary lists, per-beneficiary
+> entitlements, card flow) — treat those as historical.
+
 ## 1. System context
 
 ```mermaid
@@ -72,17 +83,22 @@ erDiagram
     AGENT_STOCK }o--|| HAMPER : tracks
 ```
 
+**Current (voucher-centric) tables:**
+
 | Table | Kind | Notes |
 |---|---|---|
-| `projects`, `disbursement_orders`, `assignments` | pulled | mandatory refs on every transaction |
-| `beneficiaries` | pulled | only the agent's assigned slice; ben no, name, ID info, photo? |
-| `vouchers` | pulled + counted locally | voucher no (unique = doc name on backend), **one entitlement per voucher** (`entitlement_type` cash \| hamper, mirrors Entitlement Voucher's Goods\|Cash), amount, validity from/to, status, `uses_count` (max 2, local-only rule), project/DO refs |
-| `entitlements` | pulled | type: `hamper` \| `cash` \| `card`; qty/amount; status |
+| `assignments` (ADA) | pulled | agent's own slice; `project`/`disbursement_order` are plain name strings, `amount_to_disburse`. The only grouping that reaches the device |
+| `vouchers` | pulled + counted locally | voucher no (unique = doc name on backend). **Entitlement folded inline**: `entitlement_type` cash\|hamper, `amount` (cash) or `hamper_id`/`qty`/`uom`/`rate` (goods), plus `redeemed_amount`/`redeemed_qty` running totals for partial redemption. validity from/to, status, `uses_count` (max 2), `project` string, `assignment_id` |
 | `hampers`, `hamper_items` | pulled | BOM + components (item, unit, qty/household) |
 | `agent_stock` | pulled + decremented locally | agent-warehouse levels per finished item |
-| `pos_transactions` | local-first | uuid PK, type (`goods_issue` \| `cash_payment` \| `card_withdrawal` \| `stock_return`), refs (beneficiary/voucher, entitlement, project, DO), amount/qty, status: `pending` → `synced` \| `conflict`, created_at, synced_at |
+| `voucher_redemptions` | local-first | one row per voucher use → backend Entitlement Redemption; links straight to the voucher, carries type/amount/qty |
+| `pos_transactions` | local-first | uuid PK, type (`goods_issue` \| `cash_payment` \| `stock_return`), refs (voucher no, `project` string, `assignment_id`), amount/qty, status: `pending` → `synced` \| `conflict`, created_at, synced_at |
+| `pos_profiles`, `pos_sessions` | pulled / local | POS Profile + shift (Opening/Closing Entry) |
 | `outbox` | local | uuid, payload JSON, attempt count, next_retry_at, last_error |
 | `sync_meta` | local | per-collection cursors/timestamps for delta pulls |
+
+Dropped in the voucher-centric refactor: `projects`, `disbursement_orders`,
+`beneficiaries`, `entitlements` (the erDiagram above is historical).
 
 ## 4. Sync engine (outbox pattern)
 
@@ -177,7 +193,7 @@ Login (email + password)
 - **Admin** = dashboard tile → pushed `admin/` stack, role-guarded in `admin/_layout.tsx` (not a 6th tab, not a drawer) — agents and admins share an identical baseline UI.
 - Flow confirmation/success screens use `presentation: 'modal'` (no back-swipe into re-submission; dismiss returns to dashboard).
 
-Route tree (expo-router):
+Route tree (expo-router) — **current** (voucher-centric):
 
 ```
 src/app/
@@ -188,28 +204,21 @@ src/app/
 └── (app)/                      # auth guard (redirect to /login)
     ├── _layout.tsx
     ├── (tabs)/
-    │   ├── _layout.tsx         # Dashboard · Beneficiaries · Transactions · Stock · Profile
-    │   ├── index.tsx           # POS Dashboard
-    │   ├── beneficiaries.tsx
-    │   ├── transactions.tsx
+    │   ├── _layout.tsx         # Dashboard · Search · Transactions · Stock · Profile
+    │   ├── index.tsx           # POS Dashboard (session + search focus)
+    │   ├── search.tsx          # voucher search (voucher no · beneficiary no)
+    │   ├── transactions.tsx    # redemption/transaction history
     │   ├── stock.tsx
-    │   └── profile.tsx
-    ├── vouchers/
-    │   ├── index.tsx           # search
-    │   └── [voucherNo].tsx     # detail + issue entitlement
-    ├── goods/
-    │   ├── index.tsx           # beneficiary/voucher picker
-    │   └── issue/[entitlementId].tsx
-    ├── card/
-    │   ├── index.tsx           # validate card (online gate)
-    │   └── withdraw.tsx
-    ├── beneficiaries/[id].tsx  # detail + history
-    ├── reconciliation.tsx
+    │   └── profile.tsx         # session · sync · needs-review · settings · logout
+    ├── vouchers/[voucherNo].tsx # voucher detail + redeem (cash/goods, partial)
+    ├── card/index.tsx          # "Coming soon" placeholder (future bank flow)
+    ├── transactions/[id].tsx   # transaction detail
+    ├── reconciliation.tsx      # end-of-day session close
     └── admin/                  # role guard in admin/_layout.tsx
         ├── _layout.tsx
         ├── index.tsx
         ├── agents.tsx
-        └── orders.tsx
+        └── orders.tsx          # ADA (assignments) list
 ```
 
 ## 6. Source layout
@@ -219,8 +228,8 @@ src/
 ├── app/                    # routes only — thin, compose features
 ├── components/
 │   ├── ui/                 # primitives (button, text, input, card, badge…)
-│   └── domain/             # BeneficiaryCard, VoucherStatusBadge, EntitlementList,
-│                           # SyncStatusPill, HamperContents, AmountKeypad…
+│   └── domain/             # VoucherStatusBadge, PosSessionCard, SyncStatusPill,
+│                           # TransactionRow, Screen, widgets, badges…
 ├── db/
 │   ├── schema.ts           # Drizzle schema (all tables above)
 │   ├── client.ts           # openDatabaseSync + drizzle init (enableChangeListener)
@@ -231,8 +240,8 @@ src/
 │   ├── pos/                # active flow slice (selection → confirm)
 │   └── sync/               # slice (status) + engine (queue runner, triggers)
 ├── repositories/           # all Drizzle reads/writes; the ONLY module touching db/
-│   ├── beneficiaries.ts · vouchers.ts · entitlements.ts
-│   ├── stock.ts · transactions.ts · outbox.ts
+│   ├── queries.ts (reactive reads) · mutations.ts (redeem/session/stock writes)
+│   ├── mappers.ts (row→domain) · sync.ts (pull upserts + push marking)
 ├── services/
 │   ├── api/
 │   │   ├── types.ts        # ApiAdapter interface + DTOs

@@ -5,96 +5,55 @@
 import { db } from '@/db/client';
 import {
 	agentStock,
-	beneficiaries,
-	disbursementOrders,
-	entitlements,
+	assignments,
 	hamperItems,
 	hampers,
 	posProfiles,
 	posSessions,
 	posTransactions,
-	projects,
 	voucherRedemptions,
 	vouchers,
 } from '@/db/schema';
 import type {
 	AgentStockRow,
-	Beneficiary,
-	DisbursementOrder,
-	Entitlement,
+	Assignment,
 	Hamper,
 	PosProfile,
 	PosSession,
 	PosTransaction,
-	Project,
 	SyncStatus,
 	Voucher,
 	VoucherRedemption,
 } from '@/types/domain';
-import { and, desc, eq, like, or } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
-import {
-	toBeneficiary,
-	toDisbursementOrder,
-	toEntitlement,
-	toPosSession,
-	toTransaction,
-	toVoucher,
-	toVoucherRedemption,
-} from './mappers';
+import { toAssignment, toPosSession, toTransaction, toVoucher, toVoucherRedemption } from './mappers';
 
 // Sentinel for "no id yet" params so hooks can run unconditionally.
 const NONE = '__none__';
 
-// ---- projects & orders ------------------------------------------------------
+// ---- assignments (ADA) ------------------------------------------------------
 
-export function useProject(id?: string): Project | undefined {
+// The agent's assignments — the agent-scoped grouping vouchers belong to.
+export function useAssignments(): Assignment[] {
+	const { data } = useLiveQuery(db.select().from(assignments).orderBy(desc(assignments.date)));
+	return (data ?? []).map(toAssignment);
+}
+
+export function useAssignment(id?: string): Assignment | undefined {
 	const { data } = useLiveQuery(
-		db.select().from(projects).where(eq(projects.id, id ?? NONE)),
+		db.select().from(assignments).where(eq(assignments.id, id ?? NONE)),
 		[id],
 	);
-	return data?.[0];
+	return data?.[0] ? toAssignment(data[0]) : undefined;
 }
 
-export function useProjects(): Project[] {
-	const { data } = useLiveQuery(db.select().from(projects));
-	return data ?? [];
-}
-
-export function useDisbursementOrders(): DisbursementOrder[] {
-	const { data } = useLiveQuery(db.select().from(disbursementOrders));
-	return (data ?? []).map(toDisbursementOrder);
-}
-
-// ---- beneficiaries ----------------------------------------------------------
-
-export function useBeneficiaries(query = ''): Beneficiary[] {
-	const q = query.trim();
-	const { data } = useLiveQuery(
-		db
-			.select()
-			.from(beneficiaries)
-			.where(
-				q
-					? or(
-							like(beneficiaries.name, `%${q}%`),
-							like(beneficiaries.beneficiaryNo, `%${q}%`),
-						)
-					: undefined,
-			)
-			.orderBy(beneficiaries.name),
-		[q],
-	);
-	return (data ?? []).map(toBeneficiary);
-}
-
-export function useBeneficiary(id?: string): Beneficiary | undefined {
-	const { data } = useLiveQuery(
-		db.select().from(beneficiaries).where(eq(beneficiaries.id, id ?? NONE)),
-		[id],
-	);
-	return data?.[0] ? toBeneficiary(data[0]) : undefined;
+// The active assignment used to stamp accounting refs on ad-hoc transactions
+// (e.g. stock moves). Imperative — callers read it inside a mutation.
+export function firstAssignment(): Assignment | undefined {
+	const rows = db.select().from(assignments).limit(1).all();
+	return rows[0] ? toAssignment(rows[0]) : undefined;
 }
 
 // ---- vouchers ----------------------------------------------------------------
@@ -115,63 +74,33 @@ export function useVoucher(id?: string): Voucher | undefined {
 	return data?.[0] ? toVoucher(data[0]) : undefined;
 }
 
-// Imperative search (button-triggered screens; results don't need to be live).
-export function findVoucherByNo(voucherNo: string): Voucher | undefined {
-	const rows = db
-		.select()
-		.from(vouchers)
-		.where(eq(vouchers.voucherNo, voucherNo.trim().toUpperCase()))
-		.all();
-	return rows[0] ? toVoucher(rows[0]) : undefined;
-}
-
-export function findVouchersByBeneficiaryNo(beneficiaryNo: string): Voucher[] {
-	return db
-		.select()
-		.from(vouchers)
-		.where(eq(vouchers.beneficiaryNo, beneficiaryNo.trim().toUpperCase()))
-		.all()
-		.map(toVoucher);
-}
-
-// ---- entitlements -------------------------------------------------------------
-
-export function useEntitlement(id?: string): Entitlement | undefined {
-	const { data } = useLiveQuery(
-		db.select().from(entitlements).where(eq(entitlements.id, id ?? NONE)),
-		[id],
-	);
-	return data?.[0] ? toEntitlement(data[0]) : undefined;
-}
-
-export function useEntitlementsForBeneficiary(beneficiaryId?: string): Entitlement[] {
+// Live (reactive) search — results update when a redemption changes a voucher's
+// status/uses, so the search list never goes stale after paying. Case-insensitive
+// exact match (the backend doesn't guarantee uppercase voucher numbers). An empty
+// query matches nothing (WHERE 1=0) so the hooks can run unconditionally.
+export function useVoucherSearchByNo(voucherNo?: string): Voucher | undefined {
+	const q = (voucherNo ?? '').trim().toUpperCase();
 	const { data } = useLiveQuery(
 		db
 			.select()
-			.from(entitlements)
-			.where(eq(entitlements.beneficiaryId, beneficiaryId ?? NONE)),
-		[beneficiaryId],
+			.from(vouchers)
+			.where(q ? sql`upper(${vouchers.voucherNo}) = ${q}` : sql`1 = 0`),
+		[q],
 	);
-	return (data ?? []).map(toEntitlement);
+	return data?.[0] ? toVoucher(data[0]) : undefined;
 }
 
-export function useEntitlementsForVoucher(voucherId?: string): Entitlement[] {
+export function useVouchersByBeneficiaryNo(beneficiaryNo?: string): Voucher[] {
+	const q = (beneficiaryNo ?? '').trim().toUpperCase();
 	const { data } = useLiveQuery(
 		db
 			.select()
-			.from(entitlements)
-			.where(eq(entitlements.voucherId, voucherId ?? NONE)),
-		[voucherId],
+			.from(vouchers)
+			.where(q ? sql`upper(${vouchers.beneficiaryNo}) = ${q}` : sql`1 = 0`)
+			.orderBy(desc(vouchers.voucherNo)),
+		[q],
 	);
-	return (data ?? []).map(toEntitlement);
-}
-
-// All entitlements still available, for pickers/counts.
-export function useAvailableEntitlements(): Entitlement[] {
-	const { data } = useLiveQuery(
-		db.select().from(entitlements).where(eq(entitlements.status, 'available')),
-	);
-	return (data ?? []).map(toEntitlement);
+	return (data ?? []).map(toVoucher);
 }
 
 // ---- hampers -------------------------------------------------------------------
@@ -228,18 +157,6 @@ export function useTransaction(id?: string): PosTransaction | undefined {
 		[id],
 	);
 	return data?.[0] ? toTransaction(data[0]) : undefined;
-}
-
-export function useBeneficiaryTransactions(beneficiaryId?: string): PosTransaction[] {
-	const { data } = useLiveQuery(
-		db
-			.select()
-			.from(posTransactions)
-			.where(eq(posTransactions.beneficiaryId, beneficiaryId ?? NONE))
-			.orderBy(desc(posTransactions.createdAt)),
-		[beneficiaryId],
-	);
-	return (data ?? []).map(toTransaction);
 }
 
 // Pending/conflict counts for pills, banners, and the profile screen.

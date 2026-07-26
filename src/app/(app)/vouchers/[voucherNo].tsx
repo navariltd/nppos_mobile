@@ -1,7 +1,7 @@
 import { VoucherStatusBadge } from '@/components/domain/badges';
-import { EntitlementCard } from '@/components/domain/EntitlementCard';
 import { Screen } from '@/components/domain/Screen';
 import { EmptyState, SectionLabel, Stat } from '@/components/domain/widgets';
+import { Alert as AlertBanner, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -12,22 +12,23 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Alert as AlertBanner, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
+import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { formatDate, formatKES } from '@/lib/format';
+import { cn } from '@/lib/utils';
 import {
-	issueCashEntitlement,
-	useEntitlementsForVoucher,
-	useProject,
+	redeemVoucherCash,
+	redeemVoucherGoods,
+	useHamper,
+	useOpenPosSession,
 	useRedemptionsForVoucher,
 	useVoucherByNo,
 } from '@/repositories';
-import { cn } from '@/lib/utils';
-import type { Entitlement } from '@/types/domain';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { CalendarDays, FolderOpen, Info, SearchX } from 'lucide-react-native';
+import { Banknote, CalendarDays, FolderOpen, Gift, Info, SearchX } from 'lucide-react-native';
 import * as React from 'react';
 import { Alert, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -53,10 +54,11 @@ export default function VoucherDetail() {
 	const { voucherNo } = useLocalSearchParams<{ voucherNo: string }>();
 	const router = useRouter();
 	const voucher = useVoucherByNo(voucherNo);
-	const project = useProject(voucher?.projectId);
-	const ents = useEntitlementsForVoucher(voucher?.id);
+	const hamper = useHamper(voucher?.hamperId);
 	const redemptions = useRedemptionsForVoucher(voucher?.id);
-	const [confirmCash, setConfirmCash] = React.useState<Entitlement | null>(null);
+	const session = useOpenPosSession();
+	const [input, setInput] = React.useState('');
+	const [confirming, setConfirming] = React.useState(false);
 
 	if (!voucher) {
 		return (
@@ -66,15 +68,32 @@ export default function VoucherDetail() {
 		);
 	}
 
+	const isCash = voucher.entitlementType === 'cash';
+	const remaining = isCash
+		? voucher.amount - voucher.redeemedAmount
+		: (voucher.qty ?? 0) - voucher.redeemedQty;
 	const usesLeft = voucher.maxUses - voucher.usesCount;
 	const canIssue =
-		(voucher.status === 'active' || voucher.status === 'partially_redeemed') && usesLeft > 0;
+		(voucher.status === 'active' || voucher.status === 'partially_redeemed') &&
+		usesLeft > 0 &&
+		remaining > 0;
 
-	const issue = (e: Entitlement) => {
-		if (e.type === 'hamper') {
-			router.push(`/goods/issue/${e.id}`);
+	// Default the amount/qty to the full remaining; agent can lower it (partial).
+	const value = input.trim() === '' ? remaining : Number(input);
+	const valid = Number.isFinite(value) && value > 0 && value <= remaining;
+
+	const doRedeem = () => {
+		setConfirming(false);
+		const result = isCash
+			? redeemVoucherCash(voucher.id, value)
+			: redeemVoucherGoods(voucher.id, value);
+		if (result.ok) {
+			setInput('');
+			Alert.alert('Recorded', 'Redemption saved offline and queued for sync.', [
+				{ text: 'Done' },
+			]);
 		} else {
-			setConfirmCash(e);
+			Alert.alert('Could not redeem', result.reason);
 		}
 	};
 
@@ -100,10 +119,10 @@ export default function VoucherDetail() {
 						<View className="border-border border-t border-dashed" />
 
 						<View className="flex-row items-center">
-							{voucher.entitlementType === 'cash' ? (
-								<Stat label="Amount" value={formatKES(voucher.amount)} />
+							{isCash ? (
+								<Stat label="Remaining" value={formatKES(remaining)} />
 							) : (
-								<Stat label="Entitlement" value="Hamper" />
+								<Stat label="Remaining" value={`×${remaining} ${hamper?.name ? '' : ''}`.trim()} />
 							)}
 							<View className="flex-1 gap-1.5">
 								<UseDots used={voucher.usesCount} max={voucher.maxUses} />
@@ -115,6 +134,14 @@ export default function VoucherDetail() {
 
 						<View className="gap-2">
 							<View className="flex-row items-center gap-2">
+								<Icon as={isCash ? Banknote : Gift} size={15} className="text-muted-foreground" />
+								<Text className="text-muted-foreground text-sm">
+									{isCash
+										? `Cash · ${formatKES(voucher.amount)} total`
+										: `${hamper?.name ?? 'Hamper'} · ${voucher.qty ?? 0} total`}
+								</Text>
+							</View>
+							<View className="flex-row items-center gap-2">
 								<Icon as={CalendarDays} size={15} className="text-muted-foreground" />
 								<Text className="text-muted-foreground text-sm">
 									Valid {formatDate(voucher.validFrom)} → {formatDate(voucher.validTo)}
@@ -122,7 +149,7 @@ export default function VoucherDetail() {
 							</View>
 							<View className="flex-row items-center gap-2">
 								<Icon as={FolderOpen} size={15} className="text-muted-foreground" />
-								<Text className="text-muted-foreground text-sm">{project?.name}</Text>
+								<Text className="text-muted-foreground text-sm">{voucher.project}</Text>
 							</View>
 						</View>
 					</CardContent>
@@ -132,32 +159,61 @@ export default function VoucherDetail() {
 			{!canIssue && (
 				<Animated.View entering={FadeInDown.duration(320).delay(60)}>
 					<AlertBanner icon={Info} className="border-warning/40 bg-warning/10">
-						<AlertTitle className="text-warning">Cannot issue</AlertTitle>
+						<AlertTitle className="text-warning">Cannot redeem</AlertTitle>
 						<AlertDescription className="text-warning">
 							{voucher.status === 'redeemed'
 								? 'Voucher is fully redeemed.'
 								: voucher.status === 'expired'
 									? 'Voucher is outside its validity window.'
-									: 'This voucher cannot be issued.'}
+									: remaining <= 0
+										? 'Nothing left to redeem on this voucher.'
+										: 'This voucher cannot be redeemed.'}
 						</AlertDescription>
 					</AlertBanner>
 				</Animated.View>
 			)}
 
-			<SectionLabel>Entitlement</SectionLabel>
-			{ents.length === 0 ? (
-				<EmptyState title="No entitlement" />
-			) : (
-				ents.map((e, i) => (
-					<Animated.View key={e.id} entering={FadeInDown.duration(320).delay(120 + i * 70)}>
-						<EntitlementCard
-							entitlement={e}
-							actionLabel={e.type === 'hamper' ? 'Issue hamper' : 'Issue cash'}
-							onAction={() => issue(e)}
-							disabled={!canIssue}
-						/>
-					</Animated.View>
-				))
+			{/* Redeem — partial allowed: amount/qty defaults to the full remaining */}
+			{canIssue && (
+				<Animated.View entering={FadeInDown.duration(320).delay(120)}>
+					<SectionLabel>{isCash ? 'Redeem cash' : 'Redeem hamper'}</SectionLabel>
+					<Card>
+						<CardContent className="gap-4 pt-5">
+							<View className="gap-1.5">
+								<Text className="text-muted-foreground text-xs">
+									{isCash ? 'Amount to pay out (KES)' : 'Quantity to issue'}
+								</Text>
+								<Input
+									value={input}
+									onChangeText={setInput}
+									keyboardType={isCash ? 'decimal-pad' : 'number-pad'}
+									placeholder={String(remaining)}
+									className="h-12 rounded-xl"
+								/>
+								<Text className="text-muted-foreground text-[11px]">
+									Up to {isCash ? formatKES(remaining) : `×${remaining}`} — you can pay/issue less.
+								</Text>
+							</View>
+							{!session && (
+								<Text className="text-warning text-xs">
+									Open a POS session from the dashboard before redeeming.
+								</Text>
+							)}
+							<Button
+								size="lg"
+								disabled={!valid || !session}
+								onPress={() => setConfirming(true)}
+							>
+								<Icon
+									as={isCash ? Banknote : Gift}
+									size={18}
+									className="text-primary-foreground"
+								/>
+								<Text>{isCash ? 'Pay out cash' : 'Issue hamper'}</Text>
+							</Button>
+						</CardContent>
+					</Card>
+				</Animated.View>
 			)}
 
 			{/* Each voucher use — mirrors the backend's Entitlement Redemption */}
@@ -182,36 +238,23 @@ export default function VoucherDetail() {
 				</>
 			)}
 
-			{/* Cash payout confirmation */}
-			<AlertDialog open={confirmCash !== null} onOpenChange={(open) => !open && setConfirmCash(null)}>
+			{/* Redemption confirmation */}
+			<AlertDialog open={confirming} onOpenChange={setConfirming}>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Issue cash</AlertDialogTitle>
+						<AlertDialogTitle>{isCash ? 'Issue cash' : 'Issue hamper'}</AlertDialogTitle>
 						<AlertDialogDescription>
-							Record a Payment Entry of {formatKES(confirmCash?.amount)} against{' '}
-							{voucher.voucherNo}? This uses 1 of the voucher's {voucher.maxUses} allowed
-							transactions.
+							{isCash
+								? `Record an Entitlement Redemption of ${formatKES(value)} against ${voucher.voucherNo}?`
+								: `Issue ${value} × ${hamper?.name ?? 'hamper'} against ${voucher.voucherNo}?`}{' '}
+							This uses 1 of the voucher's {voucher.maxUses} allowed transactions.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
 						<AlertDialogCancel>
 							<Text>Cancel</Text>
 						</AlertDialogCancel>
-						<AlertDialogAction
-							onPress={() => {
-								const ent = confirmCash;
-								setConfirmCash(null);
-								if (!ent) return;
-								const result = issueCashEntitlement(ent.id);
-								if (result.ok) {
-									Alert.alert('Recorded', 'Cash payout saved offline and queued for sync.', [
-										{ text: 'Done', onPress: () => router.back() },
-									]);
-								} else {
-									Alert.alert('Could not issue', result.reason);
-								}
-							}}
-						>
+						<AlertDialogAction onPress={doRedeem}>
 							<Text>Confirm</Text>
 						</AlertDialogAction>
 					</AlertDialogFooter>

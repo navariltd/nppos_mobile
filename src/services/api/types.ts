@@ -9,12 +9,8 @@ import type {
 	Agent,
 	AgentStockRow,
 	Assignment,
-	Beneficiary,
-	DisbursementOrder,
-	Entitlement,
 	Hamper,
 	PosProfile,
-	Project,
 	Voucher,
 } from '@/types/domain';
 // (PosProfile appears in both LoginResponse and PullResponse — login seeds the
@@ -48,20 +44,16 @@ export interface LoginResponse {
 export type OutboxPayload =
 	| {
 			kind: 'cash_payment';
-			entitlement: string;
-			amount?: number | null;
-			voucherNo?: string;
-			beneficiary?: string;
+			voucherNo: string; // → Entitlement Redemption (Cash) on the voucher
+			amount: number;
 			posSession: string;
 	  }
 	| {
 			kind: 'goods_issue';
-			entitlement: string;
+			voucherNo: string; // → Entitlement Redemption (Goods) on the voucher
 			hamper: string;
 			qty: number;
 			warehouse: string; // Stock Entry source (the session profile's warehouse)
-			voucherNo?: string;
-			beneficiary?: string;
 			posSession: string;
 	  }
 	| {
@@ -131,23 +123,15 @@ export class ApiError extends Error {
 export type PullCursors = Partial<Record<PullCollection, string>>;
 
 export type PullCollection =
-	| 'projects'
-	| 'disbursementOrders'
 	| 'assignments'
-	| 'beneficiaries'
 	| 'vouchers'
-	| 'entitlements'
 	| 'hampers'
 	| 'agentStock'
 	| 'posProfiles';
 
 export interface PullResponse {
-	projects: Project[];
-	disbursementOrders: DisbursementOrder[];
 	assignments: Assignment[];
-	beneficiaries: Beneficiary[];
-	vouchers: Voucher[];
-	entitlements: Entitlement[];
+	vouchers: Voucher[]; // entitlement folded inline (Cash|Goods)
 	hampers: Hamper[]; // items inline, like the domain type
 	agentStock: AgentStockRow[];
 	posProfiles: PosProfile[];

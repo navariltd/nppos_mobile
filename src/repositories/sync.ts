@@ -6,23 +6,19 @@ import { db } from '@/db/client';
 import {
 	agentStock,
 	assignments,
-	beneficiaries,
-	disbursementOrders,
-	entitlements,
 	hamperItems,
 	hampers,
 	outbox,
 	posProfiles,
 	posSessions,
 	posTransactions,
-	projects,
 	syncMeta,
 	voucherRedemptions,
 	vouchers,
 } from '@/db/schema';
 import type { OutboxPayload, PullCursors, PullResponse } from '@/services/api';
 import type { PosProfile } from '@/types/domain';
-import { asc, eq, isNull, lte, or } from 'drizzle-orm';
+import { asc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 
 export interface OutboxItem {
 	id: string;
@@ -84,17 +80,13 @@ export function resetLocalData(): void {
 		tx.delete(voucherRedemptions).run();
 		tx.delete(posTransactions).run();
 		tx.delete(outbox).run();
-		tx.delete(entitlements).run();
 		tx.delete(hamperItems).run();
 		tx.delete(agentStock).run();
 		tx.delete(posSessions).run();
-		tx.delete(beneficiaries).run();
-		tx.delete(assignments).run();
 		tx.delete(vouchers).run();
-		tx.delete(disbursementOrders).run();
+		tx.delete(assignments).run();
 		tx.delete(hampers).run();
 		tx.delete(posProfiles).run();
-		tx.delete(projects).run();
 		tx.delete(syncMeta).run();
 	});
 }
@@ -179,63 +171,37 @@ export function getPullCursors(): PullCursors {
 	return cursors as PullCursors;
 }
 
-// Upsert pulled reference data. Local pending work wins: vouchers/entitlements
-// referenced by still-pending local transactions are skipped this round — the
-// server copy lands once the pending push resolves (ARCHITECTURE.md §4).
+// Upsert pulled reference data. Local pending work wins: vouchers referenced by
+// still-pending local transactions are skipped this round — the server copy
+// lands once the pending push resolves (ARCHITECTURE.md §4).
 export function applyPull(pull: PullResponse): number {
 	const pending = db
-		.select({ entitlementId: posTransactions.entitlementId, voucherNo: posTransactions.voucherNo })
+		.select({ voucherNo: posTransactions.voucherNo })
 		.from(posTransactions)
 		.where(eq(posTransactions.status, 'pending'))
 		.all();
-	const pendingEntitlements = new Set(pending.map((p) => p.entitlementId).filter(Boolean));
 	const pendingVoucherNos = new Set(pending.map((p) => p.voucherNo).filter(Boolean));
 
 	let upserts = 0;
 	db.transaction((tx) => {
-		for (const p of pull.projects) {
-			tx.insert(projects)
-				.values(p)
-				.onConflictDoUpdate({ target: projects.id, set: { name: p.name, code: p.code } })
-				.run();
-			upserts++;
-		}
-		for (const d of pull.disbursementOrders) {
-			const row = {
-				id: d.id,
-				name: d.name,
-				projectId: d.projectId,
-				status: d.status,
-				totalBeneficiaries: d.totalBeneficiaries,
-				issuedCount: d.issuedCount,
-			};
-			tx.insert(disbursementOrders)
-				.values(row)
-				.onConflictDoUpdate({ target: disbursementOrders.id, set: row })
-				.run();
-			upserts++;
-		}
+		// Defer FK checks to COMMIT so interdependent rows can be upserted in any
+		// order — e.g. a goods voucher references a hamper that's inserted later
+		// in the same batch (foreign_keys = ON in client.ts would otherwise throw
+		// mid-transaction and roll back the whole pull). Auto-resets at commit.
+		tx.run(sql`PRAGMA defer_foreign_keys = ON`);
+
 		for (const a of pull.assignments) {
-			tx.insert(assignments)
-				.values(a)
-				.onConflictDoUpdate({ target: assignments.id, set: a })
-				.run();
-			upserts++;
-		}
-		for (const b of pull.beneficiaries) {
 			const row = {
-				id: b.id,
-				beneficiaryNo: b.beneficiaryNo,
-				name: b.name,
-				nationalId: b.nationalId,
-				phone: b.phone,
-				householdSize: b.householdSize,
-				projectId: b.projectId,
-				assignmentId: b.assignmentId,
+				id: a.id,
+				agentId: a.agentId,
+				project: a.project,
+				disbursementOrder: a.disbursementOrder ?? null,
+				date: a.date ?? null,
+				amountToDisburse: a.amountToDisburse,
 			};
-			tx.insert(beneficiaries)
+			tx.insert(assignments)
 				.values(row)
-				.onConflictDoUpdate({ target: beneficiaries.id, set: row })
+				.onConflictDoUpdate({ target: assignments.id, set: row })
 				.run();
 			upserts++;
 		}
@@ -247,37 +213,23 @@ export function applyPull(pull: PullResponse): number {
 				beneficiaryNo: v.beneficiaryNo ?? null,
 				entitlementType: v.entitlementType,
 				amount: v.amount,
+				hamperId: v.hamperId ?? null,
+				qty: v.qty ?? null,
+				uom: v.uom ?? null,
+				rate: v.rate ?? null,
+				redeemedAmount: v.redeemedAmount,
+				redeemedQty: v.redeemedQty,
 				validFrom: v.validFrom,
 				validTo: v.validTo,
 				status: v.status,
 				usesCount: v.usesCount,
 				maxUses: v.maxUses,
-				projectId: v.projectId,
-				disbursementOrderId: v.disbursementOrderId,
+				project: v.project,
+				assignmentId: v.assignmentId ?? null,
 			};
 			tx.insert(vouchers)
 				.values(row)
 				.onConflictDoUpdate({ target: vouchers.id, set: row })
-				.run();
-			upserts++;
-		}
-		for (const e of pull.entitlements) {
-			if (pendingEntitlements.has(e.id)) continue;
-			const row = {
-				id: e.id,
-				type: e.type,
-				hamperId: e.hamperId ?? null,
-				qty: e.qty ?? null,
-				amount: e.amount ?? null,
-				status: e.status,
-				beneficiaryId: e.beneficiaryId ?? null,
-				voucherId: e.voucherId ?? null,
-				projectId: e.projectId,
-				disbursementOrderId: e.disbursementOrderId,
-			};
-			tx.insert(entitlements)
-				.values(row)
-				.onConflictDoUpdate({ target: entitlements.id, set: row })
 				.run();
 			upserts++;
 		}

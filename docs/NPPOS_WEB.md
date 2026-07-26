@@ -90,7 +90,10 @@ Mobile is currently the furthest-along POS client.
    POS Opening/Closing Entries (see FRAPPE_BACKEND.md); the backend needs the
    same wiring (or a whitelisted method that accepts our session payloads).
 5. No whitelisted search/redeem API yet — a FrappeAdapter would use plain REST
-   on the doctypes until one exists.
+   on the doctypes until one exists. **The whitelisted sync methods
+   (`nppos.sync_api.login` / `sync_push` / `sync_pull`) live in the nppos app,
+   not aigt_hdr** — the mobile `FrappeAdapter` (`src/services/api/frappe/`) is
+   already wired to that namespace.
 
 ## Mapping to the mobile app's local DB
 

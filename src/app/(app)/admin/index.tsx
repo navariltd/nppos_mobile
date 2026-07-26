@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { agentsOverview } from '@/data/mock';
-import { useDisbursementOrders } from '@/repositories';
+import { useAssignments } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { ChartColumn, ClipboardList, ShieldCheck, UsersRound } from 'lucide-react-native';
 import { Alert, View } from 'react-native';
@@ -13,10 +13,9 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function AdminHome() {
 	const router = useRouter();
-	const disbursementOrders = useDisbursementOrders();
+	const assignments = useAssignments();
 	const totalIssued = agentsOverview.reduce((s, a) => s + a.issued, 0);
 	const totalTarget = agentsOverview.reduce((s, a) => s + a.target, 0);
-	const openDOs = disbursementOrders.filter((d) => d.status === 'open').length;
 
 	return (
 		<Screen>
@@ -42,8 +41,8 @@ export default function AdminHome() {
 							labelClassName="text-primary-foreground/60"
 						/>
 						<Stat
-							label="Open DOs"
-							value={String(openDOs)}
+							label="Assignments"
+							value={String(assignments.length)}
 							valueClassName="text-primary-foreground"
 							labelClassName="text-primary-foreground/60"
 						/>
@@ -65,8 +64,8 @@ export default function AdminHome() {
 					/>
 					<Separator />
 					<ListRow
-						title="Disbursement orders"
-						subtitle="DO summaries"
+						title="Assignments"
+						subtitle="Agent disbursement assignments"
 						onPress={() => router.push('/admin/orders')}
 						leading={
 							<View className="bg-warning/15 h-10 w-10 items-center justify-center rounded-xl">

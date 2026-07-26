@@ -34,6 +34,14 @@ export function SyncManager() {
 		wasOnline.current = isOnline;
 	}, [isOnline, kick]);
 
+	// Just signed in — pull the agent's reference data right away instead of
+	// waiting for the next interval tick (login itself does not pull).
+	const wasAuth = React.useRef(false);
+	React.useEffect(() => {
+		if (isAuthenticated && !wasAuth.current) kick();
+		wasAuth.current = isAuthenticated;
+	}, [isAuthenticated, kick]);
+
 	// App returns to foreground.
 	React.useEffect(() => {
 		const sub = AppState.addEventListener('change', (state) => {

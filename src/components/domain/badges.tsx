@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge';
 import { Text } from '@/components/ui/text';
-import type { EntitlementType, SyncStatus, VoucherStatus } from '@/types/domain';
+import type { SyncStatus, VoucherStatus } from '@/types/domain';
 
 const SYNC_LABEL: Record<SyncStatus, string> = {
 	pending: 'Pending sync',
@@ -36,20 +36,6 @@ export function VoucherStatusBadge({ status }: { status: VoucherStatus }) {
 	return (
 		<Badge className={m.cls}>
 			<Text className={m.text}>{m.label}</Text>
-		</Badge>
-	);
-}
-
-const ENT_LABEL: Record<EntitlementType, string> = {
-	hamper: 'Hamper',
-	cash: 'Cash',
-	card: 'Card',
-};
-
-export function EntitlementTypeBadge({ type }: { type: EntitlementType }) {
-	return (
-		<Badge variant="secondary">
-			<Text>{ENT_LABEL[type]}</Text>
 		</Badge>
 	);
 }

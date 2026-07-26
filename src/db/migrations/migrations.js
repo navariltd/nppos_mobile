@@ -6,6 +6,7 @@ import m0002 from './20260717032308_voucher_status_backend_vocab/migration.sql';
 import m0003 from './20260717062756_voucher_single_entitlement/migration.sql';
 import m0004 from './20260721121029_agent_stock_per_warehouse/migration.sql';
 import m0005 from './20260721124103_transaction_conflict_reason/migration.sql';
+import m0006 from './20260724034008_nppos_voucher_centric_model/migration.sql';
 
   export default {
     migrations: {
@@ -14,7 +15,8 @@ import m0005 from './20260721124103_transaction_conflict_reason/migration.sql';
 "20260717032308_voucher_status_backend_vocab": m0002,
 "20260717062756_voucher_single_entitlement": m0003,
 "20260721121029_agent_stock_per_warehouse": m0004,
-"20260721124103_transaction_conflict_reason": m0005
+"20260721124103_transaction_conflict_reason": m0005,
+"20260724034008_nppos_voucher_centric_model": m0006
 }
   }
   

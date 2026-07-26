@@ -87,9 +87,6 @@ export default function Reconciliation() {
 
 	const cashTxns = transactions.filter((t) => t.type === 'cash_payment');
 	const cashTotal = cashTxns.reduce((s, t) => s + (t.amount ?? 0), 0);
-	const cardTotal = transactions
-		.filter((t) => t.type === 'card_withdrawal')
-		.reduce((s, t) => s + (t.amount ?? 0), 0);
 	const hampersIssued = agentStock.reduce((s, r) => s + r.issuedToday, 0);
 
 	return (
@@ -109,8 +106,8 @@ export default function Reconciliation() {
 								labelClassName="text-primary-foreground/60"
 							/>
 							<Stat
-								label="Card withdrawals"
-								value={formatKES(cardTotal)}
+								label="Cash payouts"
+								value={String(cashTxns.length)}
 								valueClassName="text-primary-foreground"
 								labelClassName="text-primary-foreground/60"
 							/>

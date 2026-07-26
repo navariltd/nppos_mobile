@@ -1,95 +1,30 @@
 // Local SQLite schema — the source of truth for all domain data (AGENTS.md rule 1).
-// Mirrors src/types/domain.ts; backend mapping in docs/FRAPPE_BACKEND.md.
+// Mirrors src/types/domain.ts; backend mapping in docs/NPPOS_WEB.md.
+//
+// The app mirrors the nppos web POS: it only deals with Entitlement Vouchers and
+// Entitlement Redemptions. A voucher carries its entitlement inline (Goods|Cash),
+// exactly like the backend's Entitlement Voucher (single item/qty/rate + amount,
+// no child table). Redemptions link straight to the voucher.
 //
 // Conventions:
-// - Pulled rows (projects, DOs, assignments, beneficiaries, vouchers, hampers,
-//   entitlements).
-// - Locally created rows (pos_transactions) use a client UUID as `id` forever;
-//   `serverName` is filled after sync.
+// - Pulled rows (assignments, vouchers, hampers, agent stock, pos profiles).
+// - Locally created rows (pos_transactions, voucher_redemptions, pos_sessions)
+//   use a client UUID as `id` forever; `serverName` is filled after sync.
 
 import { index, integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
-export const projects = sqliteTable('projects', {
-	id: text('id').primaryKey(),
-	name: text('name').notNull(),
-	code: text('code').notNull(),
-});
-
-export const disbursementOrders = sqliteTable('disbursement_orders', {
-	id: text('id').primaryKey(),
-	name: text('name').notNull(),
-	projectId: text('project_id')
-		.notNull()
-		.references(() => projects.id),
-	// backend: Cash | Physical Goods | Services
-	disbursementType: text('disbursement_type', {
-		enum: ['cash', 'goods', 'services'],
-	})
-		.notNull()
-		.default('cash'),
-	status: text('status', { enum: ['open', 'closed'] }).notNull().default('open'),
-	totalBeneficiaries: integer('total_beneficiaries').notNull().default(0),
-	issuedCount: integer('issued_count').notNull().default(0),
-});
-
-// Agent Disbursement Assignment — the agent's per-DO slice (docs/FRAPPE_BACKEND.md).
+// Agent Disbursement Assignment — the agent's own slice (docs/FRAPPE_BACKEND.md).
+// Projects/DOs are back-office hierarchy an agent never sees; the ADA is the
+// agent-scoped grouping vouchers belong to. `project`/`disbursementOrder` are
+// plain name strings (accounting refs), not links to local master tables.
 export const assignments = sqliteTable('assignments', {
 	id: text('id').primaryKey(),
-	disbursementOrderId: text('disbursement_order_id')
-		.notNull()
-		.references(() => disbursementOrders.id),
 	agentId: text('agent_id').notNull(),
+	project: text('project').notNull(),
+	disbursementOrder: text('disbursement_order'), // informational name string
 	date: text('date'),
 	amountToDisburse: real('amount_to_disburse').notNull().default(0),
 });
-
-export const beneficiaries = sqliteTable(
-	'beneficiaries',
-	{
-		id: text('id').primaryKey(),
-		beneficiaryNo: text('beneficiary_no').notNull(),
-		name: text('name').notNull(),
-		nationalId: text('national_id'),
-		phone: text('phone'),
-		householdSize: integer('household_size').notNull().default(1),
-		projectId: text('project_id')
-			.notNull()
-			.references(() => projects.id),
-		assignmentId: text('assignment_id').notNull(),
-		lastIssuedAt: text('last_issued_at'),
-	},
-	(t) => [index('beneficiaries_no_idx').on(t.beneficiaryNo)],
-);
-
-export const vouchers = sqliteTable(
-	'vouchers',
-	{
-		id: text('id').primaryKey(),
-		voucherNo: text('voucher_no').notNull().unique(),
-		beneficiaryNo: text('beneficiary_no'), // walk-ins may have no beneficiary row
-		// One entitlement per voucher, like the backend's Entitlement Voucher
-		// (Goods|Cash). The linked entitlements row carries the detail 
-		// (hamperId/qty or amount); exactly one exists per voucher.
-		entitlementType: text('entitlement_type', { enum: ['cash', 'hamper'] })
-			.notNull()
-			.default('cash'),
-		amount: real('amount').notNull().default(0), // 0 for hamper vouchers
-		validFrom: text('valid_from').notNull(),
-		validTo: text('valid_to').notNull(),
-		status: text('status', { enum: ['active', 'partially_redeemed', 'redeemed', 'expired'] })
-			.notNull()
-			.default('active'),
-		usesCount: integer('uses_count').notNull().default(0),
-		maxUses: integer('max_uses').notNull().default(2), // hard limit (AGENTS.md rule 4)
-		projectId: text('project_id')
-			.notNull()
-			.references(() => projects.id),
-		disbursementOrderId: text('disbursement_order_id')
-			.notNull()
-			.references(() => disbursementOrders.id),
-	},
-	(t) => [index('vouchers_beneficiary_no_idx').on(t.beneficiaryNo)],
-);
 
 export const hampers = sqliteTable('hampers', {
 	id: text('id').primaryKey(),
@@ -106,34 +41,43 @@ export const hamperItems = sqliteTable('hamper_items', {
 	qtyPerHousehold: real('qty_per_household').notNull().default(1),
 });
 
-export const entitlements = sqliteTable(
-	'entitlements',
+// One voucher carries one entitlement inline — Goods (hamper/qty/uom/rate) OR
+// Cash (amount) — mirroring the backend's Entitlement Voucher. Running redeemed
+// totals drive partial-redemption status. Belongs to one assignment (ADA).
+export const vouchers = sqliteTable(
+	'vouchers',
 	{
 		id: text('id').primaryKey(),
-		type: text('type', { enum: ['hamper', 'cash', 'card'] }).notNull(),
+		voucherNo: text('voucher_no').notNull().unique(),
+		beneficiaryNo: text('beneficiary_no'), // walk-ins may have no beneficiary record
+		entitlementType: text('entitlement_type', { enum: ['cash', 'hamper'] })
+			.notNull()
+			.default('cash'),
+		// cash side
+		amount: real('amount').notNull().default(0), // 0 for hamper vouchers
+		// goods side (single item, no child table — like the backend)
 		hamperId: text('hamper_id').references(() => hampers.id),
 		qty: real('qty'),
-		amount: real('amount'),
-		status: text('status', { enum: ['available', 'issued'] })
+		uom: text('uom'),
+		rate: real('rate'),
+		// partial-redemption running totals
+		redeemedAmount: real('redeemed_amount').notNull().default(0),
+		redeemedQty: real('redeemed_qty').notNull().default(0),
+		validFrom: text('valid_from').notNull(),
+		validTo: text('valid_to').notNull(),
+		status: text('status', { enum: ['active', 'partially_redeemed', 'redeemed', 'expired'] })
 			.notNull()
-			.default('available'),
-		// exactly one of these two is set
-		beneficiaryId: text('beneficiary_id').references(() => beneficiaries.id),
-		voucherId: text('voucher_id').references(() => vouchers.id),
-		projectId: text('project_id')
-			.notNull()
-			.references(() => projects.id),
-		disbursementOrderId: text('disbursement_order_id')
-			.notNull()
-			.references(() => disbursementOrders.id),
+			.default('active'),
+		usesCount: integer('uses_count').notNull().default(0),
+		maxUses: integer('max_uses').notNull().default(2), // hard limit (AGENTS.md rule 4)
+		// accounting ref that posts on the redemption (a plain name string)
+		project: text('project').notNull(),
+		assignmentId: text('assignment_id').references(() => assignments.id),
 	},
-	(t) => [
-		index('entitlements_beneficiary_idx').on(t.beneficiaryId),
-		index('entitlements_voucher_idx').on(t.voucherId),
-	],
+	(t) => [index('vouchers_beneficiary_no_idx').on(t.beneficiaryNo)],
 );
 
-// Warehouse stock levels, decremented locally on goods issue.
+// Warehouse stock levels, decremented locally on goods redemption.
 export const agentStock = sqliteTable(
 	'agent_stock',
 	{
@@ -158,7 +102,7 @@ export const posProfiles = sqliteTable('pos_profiles', {
 	currency: text('currency').notNull().default('KES'),
 });
 
-// A working shift: opened before issuing, closed at end of day. Maps to a
+// A working shift: opened before redeeming, closed at end of day. Maps to a
 // POS Opening Entry on open and a POS Closing Entry on close (both via outbox).
 export const posSessions = sqliteTable(
 	'pos_sessions',
@@ -171,7 +115,7 @@ export const posSessions = sqliteTable(
 		openedAt: text('opened_at').notNull(),
 		closedAt: text('closed_at'),
 		openingFloat: real('opening_float').notNull().default(0),
-		// filled at close: expected = openingFloat + session cash payouts
+		// filled at close: expected = openingFloat − session cash payouts
 		expectedCash: real('expected_cash'),
 		countedCash: real('counted_cash'),
 		openingServerName: text('opening_server_name'), // POS Opening Entry name
@@ -181,6 +125,7 @@ export const posSessions = sqliteTable(
 );
 
 // One row per voucher use — maps to the backend's Entitlement Redemption.
+// Links straight to the voucher (the voucher carries the entitlement).
 export const voucherRedemptions = sqliteTable(
 	'voucher_redemptions',
 	{
@@ -188,9 +133,6 @@ export const voucherRedemptions = sqliteTable(
 		voucherId: text('voucher_id')
 			.notNull()
 			.references(() => vouchers.id),
-		entitlementId: text('entitlement_id')
-			.notNull()
-			.references(() => entitlements.id),
 		transactionId: text('transaction_id').notNull(), // pos_transactions.id
 		posSessionId: text('pos_session_id'),
 		type: text('type', { enum: ['cash', 'hamper'] }).notNull(),
@@ -207,19 +149,17 @@ export const posTransactions = sqliteTable(
 	{
 		id: text('id').primaryKey(),
 		type: text('type', {
-			enum: ['goods_issue', 'cash_payment', 'card_withdrawal', 'stock_return'],
+			enum: ['goods_issue', 'cash_payment', 'stock_return'],
 		}).notNull(),
 		title: text('title').notNull(),
 		subtitle: text('subtitle').notNull(),
 		amount: real('amount'),
 		qty: real('qty'),
-		beneficiaryId: text('beneficiary_id'),
 		beneficiaryName: text('beneficiary_name'),
 		voucherNo: text('voucher_no'),
-		entitlementId: text('entitlement_id'),
 		posSessionId: text('pos_session_id'),
-		projectId: text('project_id').notNull(),
-		disbursementOrderId: text('disbursement_order_id').notNull(),
+		project: text('project').notNull(), // accounting ref (name string)
+		assignmentId: text('assignment_id'),
 		status: text('status', { enum: ['pending', 'synced', 'conflict'] })
 			.notNull()
 			.default('pending'),

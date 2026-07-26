@@ -1,17 +1,17 @@
 // All local writes. Each mutation follows AGENTS.md hard rules: one SQLite
 // transaction writing the domain row(s) plus an outbox row keyed by a client
-// UUID; voucher limit/validity is validated here at issue time. Screens get a
-// plain { ok } | { ok: false, reason } result to surface.
+// UUID; voucher limit/validity is validated here at redemption time. Screens get
+// a plain { ok } | { ok: false, reason } result to surface.
 //
-// The card flow is the exception: online-only, no outbox (rule 2) — it records
-// as already-synced since the bank transfer happens in real time (stubbed).
+// The app mirrors the nppos web POS: a voucher carries its entitlement inline
+// (Cash|Goods) and each redemption maps to one Entitlement Redemption. Agents may
+// redeem LESS than the voucher's cash amount / goods qty (partial redemption),
+// across the 2 allowed uses.
 
 import { db } from '@/db/client';
 import {
 	agentStock,
-	beneficiaries,
-	disbursementOrders,
-	entitlements,
+	assignments,
 	hampers,
 	outbox,
 	posProfiles,
@@ -37,142 +37,75 @@ function getOpenSession() {
 	return db.select().from(posSessions).where(eq(posSessions.status, 'open')).get();
 }
 
-type IssueContext =
-	| { error: string; ent?: never }
-	| {
-			error?: undefined;
-			ent: typeof entitlements.$inferSelect;
-			beneficiary: typeof beneficiaries.$inferSelect | undefined;
-			voucher: typeof vouchers.$inferSelect | undefined;
-			recipientLabel: string;
-	  };
+type VoucherContext =
+	| { error: string; voucher?: never }
+	| { error?: undefined; voucher: typeof vouchers.$inferSelect; recipientLabel: string };
 
-// Load an entitlement with the rows an issue touches. Shared by cash/goods/card.
-function loadIssueContext(entitlementId: string): IssueContext {
-	const ent = db.select().from(entitlements).where(eq(entitlements.id, entitlementId)).get();
-	if (!ent) return { error: 'Entitlement not found.' } as const;
-	if (ent.status !== 'available') return { error: 'Entitlement already issued.' } as const;
+// Load a voucher and validate it is redeemable (status, validity, use count).
+// Shared by the cash and goods redemption paths.
+function loadVoucherForRedeem(voucherId: string): VoucherContext {
+	const voucher = db.select().from(vouchers).where(eq(vouchers.id, voucherId)).get();
+	if (!voucher) return { error: 'Voucher not found.' } as const;
 
-	const beneficiary = ent.beneficiaryId
-		? db.select().from(beneficiaries).where(eq(beneficiaries.id, ent.beneficiaryId)).get()
-		: undefined;
-	const voucher = ent.voucherId
-		? db.select().from(vouchers).where(eq(vouchers.id, ent.voucherId)).get()
-		: undefined;
-
-	if (voucher) {
-		// Backend statuses (docs/NPPOS_WEB.md): partially redeemed is still usable.
-		if (voucher.status !== 'active' && voucher.status !== 'partially_redeemed') {
-			return {
-				error:
-					voucher.status === 'redeemed'
-						? 'Voucher is fully redeemed.'
-						: 'Voucher is outside its validity window.',
-			} as const;
-		}
-		if (voucher.usesCount >= voucher.maxUses) {
-			return { error: `Voucher has reached its ${voucher.maxUses}-use limit.` } as const;
-		}
-		const day = today();
-		if (day < voucher.validFrom || day > voucher.validTo) {
-			return { error: 'Voucher is outside its validity window.' } as const;
-		}
+	// Backend statuses (docs/NPPOS_WEB.md): partially redeemed is still usable.
+	if (voucher.status !== 'active' && voucher.status !== 'partially_redeemed') {
+		return {
+			error:
+				voucher.status === 'redeemed'
+					? 'Voucher is fully redeemed.'
+					: 'Voucher is outside its validity window.',
+		} as const;
+	}
+	if (voucher.usesCount >= voucher.maxUses) {
+		return { error: `Voucher has reached its ${voucher.maxUses}-use limit.` } as const;
+	}
+	// Only enforce the bounds that are actually set — the backend leaves
+	// valid_from/valid_to blank ('') on open-ended vouchers, and '' must not read
+	// as "expired" (any date string compares greater than '').
+	const day = today();
+	if (voucher.validFrom && day < voucher.validFrom) {
+		return { error: 'Voucher is not valid yet.' } as const;
+	}
+	if (voucher.validTo && day > voucher.validTo) {
+		return { error: 'Voucher is outside its validity window.' } as const;
 	}
 
-	const recipientLabel = beneficiary
-		? `${beneficiary.name} · ${beneficiary.beneficiaryNo}`
-		: voucher
-			? `Voucher ${voucher.voucherNo}`
-			: '—';
+	const recipientLabel = voucher.beneficiaryNo
+		? `${voucher.beneficiaryNo} · ${voucher.voucherNo}`
+		: `Voucher ${voucher.voucherNo}`;
 
-	return { ent, beneficiary, voucher, recipientLabel } as const;
+	return { voucher, recipientLabel } as const;
 }
 
-// Shared tail: voucher bump + redemption row, beneficiary stamp, DO counter,
-// outbox row. Runs inside the caller's transaction.
-function applyIssueSideEffects(
-	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-	ctx: Extract<IssueContext, { error?: undefined }>,
-	txnId: string,
-	payload: Record<string, unknown>,
-	sessionId: string | null,
-	withOutbox = true,
-) {
-	const { ent, beneficiary, voucher } = ctx;
-
-	tx.update(entitlements)
-		.set({ status: 'issued' })
-		.where(eq(entitlements.id, ent.id))
-		.run();
-
-	if (voucher) {
-		// Status follows what's left to redeem (backend vocabulary): with one
-		// entitlement per voucher a full redemption goes straight to 'redeemed'.
-		const remaining = tx
-			.select({ id: entitlements.id })
-			.from(entitlements)
-			.where(
-				and(eq(entitlements.voucherId, voucher.id), eq(entitlements.status, 'available')),
-			)
-			.all();
-		tx.update(vouchers)
-			.set({
-				usesCount: voucher.usesCount + 1,
-				status: remaining.length === 0 ? 'redeemed' : 'partially_redeemed',
-			})
-			.where(eq(vouchers.id, voucher.id))
-			.run();
-
-		// Every voucher use gets its own record — backend: Entitlement Redemption.
-		if (ent.type === 'cash' || ent.type === 'hamper') {
-			tx.insert(voucherRedemptions)
-				.values({
-					id: uuid(),
-					voucherId: voucher.id,
-					entitlementId: ent.id,
-					transactionId: txnId,
-					posSessionId: sessionId,
-					type: ent.type,
-					amount: ent.amount,
-					qty: ent.qty,
-					redeemedAt: nowIso(),
-				})
-				.run();
-		}
-	}
-
-	if (beneficiary) {
-		tx.update(beneficiaries)
-			.set({ lastIssuedAt: nowIso() })
-			.where(eq(beneficiaries.id, beneficiary.id))
-			.run();
-	}
-
-	tx.update(disbursementOrders)
-		.set({ issuedCount: sql`${disbursementOrders.issuedCount} + 1` })
-		.where(eq(disbursementOrders.id, ent.disbursementOrderId))
-		.run();
-
-	if (withOutbox) {
-		tx.insert(outbox)
-			.values({ id: txnId, payload: JSON.stringify(payload), createdAt: nowIso() })
-			.run();
-	}
+// Voucher status after a redemption: fully drawn OR uses exhausted → redeemed.
+function nextVoucherStatus(
+	voucher: typeof vouchers.$inferSelect,
+	fullyDrawn: boolean,
+): 'redeemed' | 'partially_redeemed' {
+	const usesExhausted = voucher.usesCount + 1 >= voucher.maxUses;
+	return fullyDrawn || usesExhausted ? 'redeemed' : 'partially_redeemed';
 }
 
-// ---- cash payout (beneficiary or voucher entitlement) -----------------------
+// ---- cash redemption (partial-capable) --------------------------------------
 
-export function issueCashEntitlement(entitlementId: string): MutationResult {
-	const ctx = loadIssueContext(entitlementId);
+export function redeemVoucherCash(voucherId: string, amount: number): MutationResult {
+	const ctx = loadVoucherForRedeem(voucherId);
 	if (ctx.error !== undefined) return { ok: false, reason: ctx.error };
-	const { ent, beneficiary, voucher, recipientLabel } = ctx;
-	if (ent.type !== 'cash') return { ok: false, reason: 'Not a cash entitlement.' };
+	const { voucher, recipientLabel } = ctx;
+	if (voucher.entitlementType !== 'cash') return { ok: false, reason: 'Not a cash voucher.' };
+
+	const remaining = voucher.amount - voucher.redeemedAmount;
+	if (amount <= 0) return { ok: false, reason: 'Amount must be greater than zero.' };
+	if (amount > remaining) {
+		return { ok: false, reason: `Amount exceeds the ${remaining} remaining on this voucher.` };
+	}
 
 	const session = getOpenSession();
 	if (!session) {
 		return { ok: false, reason: 'No open POS session — open one from the dashboard first.' };
 	}
 
+	const fullyDrawn = voucher.redeemedAmount + amount >= voucher.amount;
 	const id = uuid();
 	db.transaction((tx) => {
 		tx.insert(posTransactions)
@@ -181,44 +114,68 @@ export function issueCashEntitlement(entitlementId: string): MutationResult {
 				type: 'cash_payment',
 				title: 'Cash payout',
 				subtitle: recipientLabel,
-				amount: ent.amount ?? 0,
-				beneficiaryId: beneficiary?.id,
-				beneficiaryName: beneficiary?.name,
-				voucherNo: voucher?.voucherNo,
-				entitlementId: ent.id,
+				amount,
+				voucherNo: voucher.voucherNo,
 				posSessionId: session.id,
-				projectId: ent.projectId,
-				disbursementOrderId: ent.disbursementOrderId,
+				project: voucher.project,
+				assignmentId: voucher.assignmentId,
 				status: 'pending',
 				createdAt: nowIso(),
 			})
 			.run();
-		applyIssueSideEffects(
-			tx,
-			ctx,
-			id,
-			{
-				kind: 'cash_payment',
-				entitlement: ent.id,
-				amount: ent.amount,
-				voucherNo: voucher?.voucherNo,
-				beneficiary: beneficiary?.id,
-				posSession: session.id,
-			},
-			session.id,
-		);
+
+		tx.insert(voucherRedemptions)
+			.values({
+				id: uuid(),
+				voucherId: voucher.id,
+				transactionId: id,
+				posSessionId: session.id,
+				type: 'cash',
+				amount,
+				redeemedAt: nowIso(),
+			})
+			.run();
+
+		tx.update(vouchers)
+			.set({
+				redeemedAmount: voucher.redeemedAmount + amount,
+				usesCount: voucher.usesCount + 1,
+				status: nextVoucherStatus(voucher, fullyDrawn),
+			})
+			.where(eq(vouchers.id, voucher.id))
+			.run();
+
+		tx.insert(outbox)
+			.values({
+				id,
+				payload: JSON.stringify({
+					kind: 'cash_payment',
+					voucherNo: voucher.voucherNo,
+					amount,
+					posSession: session.id,
+				}),
+				createdAt: nowIso(),
+			})
+			.run();
 	});
 	return { ok: true, transactionId: id };
 }
 
-// ---- goods / hamper issue ----------------------------------------------------
+// ---- goods / hamper redemption (partial-capable) ----------------------------
 
-export function issueGoodsEntitlement(entitlementId: string): MutationResult {
-	const ctx = loadIssueContext(entitlementId);
+export function redeemVoucherGoods(voucherId: string, qty: number): MutationResult {
+	const ctx = loadVoucherForRedeem(voucherId);
 	if (ctx.error !== undefined) return { ok: false, reason: ctx.error };
-	const { ent, beneficiary, voucher, recipientLabel } = ctx;
-	if (ent.type !== 'hamper' || !ent.hamperId) {
-		return { ok: false, reason: 'Not a hamper entitlement.' };
+	const { voucher, recipientLabel } = ctx;
+	if (voucher.entitlementType !== 'hamper' || !voucher.hamperId) {
+		return { ok: false, reason: 'Not a hamper voucher.' };
+	}
+
+	const totalQty = voucher.qty ?? 0;
+	const remaining = totalQty - voucher.redeemedQty;
+	if (qty <= 0) return { ok: false, reason: 'Quantity must be at least 1.' };
+	if (qty > remaining) {
+		return { ok: false, reason: `Quantity exceeds the ${remaining} remaining on this voucher.` };
 	}
 
 	const session = getOpenSession();
@@ -234,17 +191,17 @@ export function issueGoodsEntitlement(entitlementId: string): MutationResult {
 		.get();
 	if (!profile) return { ok: false, reason: 'POS profile for this session not found.' };
 
-	const qty = ent.qty ?? 1;
 	const stock = db
 		.select()
 		.from(agentStock)
-		.where(and(eq(agentStock.warehouse, profile.warehouse), eq(agentStock.hamperId, ent.hamperId)))
+		.where(and(eq(agentStock.warehouse, profile.warehouse), eq(agentStock.hamperId, voucher.hamperId)))
 		.get();
 	if (!stock || stock.onHand < qty) {
 		return { ok: false, reason: `Not enough stock in ${profile.warehouse}.` };
 	}
-	const hamper = db.select().from(hampers).where(eq(hampers.id, ent.hamperId)).get();
+	const hamper = db.select().from(hampers).where(eq(hampers.id, voucher.hamperId)).get();
 
+	const fullyDrawn = voucher.redeemedQty + qty >= totalQty;
 	const id = uuid();
 	db.transaction((tx) => {
 		tx.insert(posTransactions)
@@ -254,17 +211,15 @@ export function issueGoodsEntitlement(entitlementId: string): MutationResult {
 				title: hamper?.name ?? 'Hamper',
 				subtitle: recipientLabel,
 				qty,
-				beneficiaryId: beneficiary?.id,
-				beneficiaryName: beneficiary?.name,
-				voucherNo: voucher?.voucherNo,
-				entitlementId: ent.id,
+				voucherNo: voucher.voucherNo,
 				posSessionId: session.id,
-				projectId: ent.projectId,
-				disbursementOrderId: ent.disbursementOrderId,
+				project: voucher.project,
+				assignmentId: voucher.assignmentId,
 				status: 'pending',
 				createdAt: nowIso(),
 			})
 			.run();
+
 		tx.update(agentStock)
 			.set({
 				onHand: sql`${agentStock.onHand} - ${qty}`,
@@ -273,75 +228,46 @@ export function issueGoodsEntitlement(entitlementId: string): MutationResult {
 			.where(
 				and(
 					eq(agentStock.warehouse, profile.warehouse),
-					eq(agentStock.hamperId, ent.hamperId!),
+					eq(agentStock.hamperId, voucher.hamperId!),
 				),
 			)
 			.run();
-		applyIssueSideEffects(
-			tx,
-			ctx,
-			id,
-			{
-				kind: 'goods_issue',
-				entitlement: ent.id,
-				hamper: ent.hamperId,
-				qty,
-				warehouse: profile.warehouse, // Stock Entry source warehouse
-				voucherNo: voucher?.voucherNo,
-				beneficiary: beneficiary?.id,
-				posSession: session.id,
-			},
-			session.id,
-		);
-	});
-	return { ok: true, transactionId: id };
-}
 
-// ---- card withdrawal (online-only, real-time — no outbox) --------------------
-
-export function recordCardWithdrawal(entitlementId: string, amount: number): MutationResult {
-	const ctx = loadIssueContext(entitlementId);
-	if (ctx.error !== undefined) return { ok: false, reason: ctx.error };
-	const { ent, beneficiary, recipientLabel } = ctx;
-	if (ent.type !== 'card') return { ok: false, reason: 'Not a card entitlement.' };
-	if (amount <= 0 || amount > (ent.amount ?? 0)) {
-		return { ok: false, reason: 'Amount exceeds the entitled balance.' };
-	}
-
-	const session = getOpenSession();
-	if (!session) {
-		return { ok: false, reason: 'No open POS session — open one from the dashboard first.' };
-	}
-
-	const id = uuid();
-	db.transaction((tx) => {
-		tx.insert(posTransactions)
+		tx.insert(voucherRedemptions)
 			.values({
-				id,
-				type: 'card_withdrawal',
-				title: 'Card withdrawal',
-				subtitle: recipientLabel,
-				amount,
-				beneficiaryId: beneficiary?.id,
-				beneficiaryName: beneficiary?.name,
-				entitlementId: ent.id,
+				id: uuid(),
+				voucherId: voucher.id,
+				transactionId: id,
 				posSessionId: session.id,
-				projectId: ent.projectId,
-				disbursementOrderId: ent.disbursementOrderId,
-				status: 'synced', // bank confirmed in real time (stub)
-				createdAt: nowIso(),
-				syncedAt: nowIso(),
-				serverName: `BANK-${id.slice(0, 8).toUpperCase()}`,
+				type: 'hamper',
+				qty,
+				redeemedAt: nowIso(),
 			})
 			.run();
-		applyIssueSideEffects(
-			tx,
-			ctx,
-			id,
-			{},
-			session.id,
-			false, // real-time flow — nothing to queue
-		);
+
+		tx.update(vouchers)
+			.set({
+				redeemedQty: voucher.redeemedQty + qty,
+				usesCount: voucher.usesCount + 1,
+				status: nextVoucherStatus(voucher, fullyDrawn),
+			})
+			.where(eq(vouchers.id, voucher.id))
+			.run();
+
+		tx.insert(outbox)
+			.values({
+				id,
+				payload: JSON.stringify({
+					kind: 'goods_issue',
+					voucherNo: voucher.voucherNo,
+					hamper: voucher.hamperId,
+					qty,
+					warehouse: profile.warehouse, // Stock Entry source warehouse
+					posSession: session.id,
+				}),
+				createdAt: nowIso(),
+			})
+			.run();
 	});
 	return { ok: true, transactionId: id };
 }
@@ -364,14 +290,9 @@ function adjustStock(
 	if (stock.onHand < qty) {
 		return { ok: false, reason: `Only ${stock.onHand} on hand.` };
 	}
-	// Rule 5: every transaction carries project + DO refs; stock moves aren't
-	// entitlement-bound, so they ride on the first open DO for now.
-	const doRow = db
-		.select()
-		.from(disbursementOrders)
-		.where(eq(disbursementOrders.status, 'open'))
-		.get();
-	if (!doRow) return { ok: false, reason: 'No open disbursement order.' };
+	// Rule 5: every transaction carries a project ref; stock moves aren't
+	// voucher-bound, so they ride on the agent's assignment.
+	const assignment = db.select().from(assignments).limit(1).get();
 
 	const id = uuid();
 	db.transaction((tx) => {
@@ -385,8 +306,8 @@ function adjustStock(
 						? `Returned ${qty} to central warehouse`
 						: `${qty} written off — damaged/expired`,
 				qty,
-				projectId: doRow.projectId,
-				disbursementOrderId: doRow.id,
+				project: assignment?.project ?? 'General',
+				assignmentId: assignment?.id,
 				status: 'pending',
 				createdAt: nowIso(),
 			})
@@ -515,6 +436,3 @@ export function closePosSession(countedCash?: number): MutationResult {
 	});
 	return { ok: true, transactionId: closeId };
 }
-
-// The dev-only simulateSyncFlush stub used to live here — replaced by the real
-// engine: features/sync/engine.ts flushing through the ApiAdapter.

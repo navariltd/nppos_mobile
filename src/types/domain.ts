@@ -1,42 +1,23 @@
-// Shared domain types for the HDR disbursement POS.
-// These mirror the local-DB model in docs/ARCHITECTURE.md §3. For now they back
-// dummy data only — no SQLite, no adapter. Keep them stable so the eventual
-// MockAdapter / FrappeAdapter can serve the same shapes.
+// Shared domain types for the nppos POS (mirrors the nppos web POS).
+// These mirror the local-DB model in src/db/schema.ts. The app only deals with
+// Entitlement Vouchers and Entitlement Redemptions (docs/NPPOS_WEB.md).
 
 export type Role = 'agent' | 'admin';
 
-export type EntitlementType = 'hamper' | 'cash' | 'card';
-
-export type TransactionType =
-	| 'goods_issue'
-	| 'cash_payment'
-	| 'card_withdrawal'
-	| 'stock_return';
+export type TransactionType = 'goods_issue' | 'cash_payment' | 'stock_return';
 
 export type SyncStatus = 'pending' | 'synced' | 'conflict';
 
 export type VoucherStatus = 'active' | 'partially_redeemed' | 'redeemed' | 'expired';
 
-export interface Project {
-	id: string;
-	name: string;
-	code: string;
-}
-
-export interface DisbursementOrder {
-	id: string;
-	name: string;
-	projectId: string;
-	status: 'open' | 'closed';
-	totalBeneficiaries: number;
-	issuedCount: number;
-}
-
-// Agent Disbursement Assignment — the agent's per-DO slice (docs/FRAPPE_BACKEND.md).
+// Agent Disbursement Assignment — the agent's own slice (docs/FRAPPE_BACKEND.md).
+// `project`/`disbursementOrder` are plain name strings, not links to master
+// tables the agent shouldn't see.
 export interface Assignment {
 	id: string;
-	disbursementOrderId: string;
 	agentId: string;
+	project: string;
+	disbursementOrder?: string;
 	date?: string;
 	amountToDisburse: number;
 }
@@ -50,35 +31,28 @@ export interface Agent {
 	region: string;
 }
 
-export interface Beneficiary {
-	id: string;
-	beneficiaryNo: string;
-	name: string;
-	nationalId: string;
-	phone: string;
-	householdSize: number;
-	projectId: string;
-	assignmentId: string;
-	// derived convenience (mock-data era; DB reads derive via entitlements table)
-	entitlementIds?: string[];
-	lastIssuedAt?: string;
-}
-
 export interface Voucher {
 	id: string;
 	voucherNo: string;
 	beneficiaryNo?: string; // walk-ins may not map to a beneficiary record
-	// one entitlement per voucher Goods|Cash
+	// one entitlement per voucher — Goods|Cash, inline like the backend
 	entitlementType: 'cash' | 'hamper';
-	amount: number; // 0 for hamper vouchers
+	amount: number; // cash side; 0 for hamper vouchers
+	// goods side
+	hamperId?: string;
+	qty?: number;
+	uom?: string;
+	rate?: number;
+	// partial-redemption running totals
+	redeemedAmount: number;
+	redeemedQty: number;
 	validFrom: string;
 	validTo: string;
 	status: VoucherStatus;
 	usesCount: number; // hard cap of 2
 	maxUses: number;
-	projectId: string;
-	disbursementOrderId: string;
-	entitlementIds?: string[];
+	project: string; // accounting ref (name string)
+	assignmentId?: string;
 }
 
 export interface HamperItem {
@@ -91,21 +65,6 @@ export interface Hamper {
 	id: string;
 	name: string; // e.g. "Project 1-Jun-2026-Food Basket A"
 	items: HamperItem[];
-}
-
-export interface Entitlement {
-	id: string;
-	type: EntitlementType;
-	// goods
-	hamperId?: string;
-	qty?: number;
-	// cash / card
-	amount?: number;
-	status: 'available' | 'issued';
-	beneficiaryId?: string;
-	voucherId?: string;
-	projectId: string;
-	disbursementOrderId: string;
 }
 
 export interface PosProfile {
@@ -133,7 +92,6 @@ export interface PosSession {
 export interface VoucherRedemption {
 	id: string;
 	voucherId: string;
-	entitlementId: string;
 	transactionId: string;
 	type: 'cash' | 'hamper';
 	amount?: number;
@@ -157,13 +115,11 @@ export interface PosTransaction {
 	subtitle: string;
 	amount?: number;
 	qty?: number;
-	beneficiaryId?: string;
 	beneficiaryName?: string;
 	voucherNo?: string;
-	entitlementId?: string;
 	posSessionId?: string;
-	projectId: string;
-	disbursementOrderId: string;
+	project: string; // accounting ref (name string)
+	assignmentId?: string;
 	status: SyncStatus;
 	conflictReason?: string; // server rejection message (status 'conflict')
 	createdAt: string;

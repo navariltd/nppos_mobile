@@ -25,7 +25,7 @@ export default function AdminLayout() {
 		>
 			<Stack.Screen name="index" options={{ title: 'Admin' }} />
 			<Stack.Screen name="agents" options={{ title: 'Agents Overview' }} />
-			<Stack.Screen name="orders" options={{ title: 'Disbursement Orders' }} />
+			<Stack.Screen name="orders" options={{ title: 'Assignments' }} />
 		</Stack>
 	);
 }

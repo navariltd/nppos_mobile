@@ -9,8 +9,7 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { formatKES } from '@/lib/format';
-import { findVoucherByNo, findVouchersByBeneficiaryNo } from '@/repositories';
-import type { Voucher } from '@/types/domain';
+import { useVoucherSearchByNo, useVouchersByBeneficiaryNo } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { Search, SearchX, Ticket } from 'lucide-react-native';
 import * as React from 'react';
@@ -19,31 +18,40 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 
 type Mode = 'voucher' | 'beneficiary';
 
+// The POS entry point: one Entitlement Voucher search covers both cash and
+// goods (the voucher carries its own entitlement type). Results come from LIVE
+// queries so they refresh automatically after a redemption (no stale status).
 export default function VoucherSearch() {
 	const router = useRouter();
 	const [mode, setMode] = React.useState<Mode>('voucher');
 	const [q, setQ] = React.useState('');
-	const [searched, setSearched] = React.useState(false);
-	const [results, setResults] = React.useState<Voucher[]>([]);
+	// The committed query (set on Search) that the live hooks run against.
+	const [submitted, setSubmitted] = React.useState<{ mode: Mode; q: string } | null>(null);
 
-	const runSearch = () => {
-		setSearched(true);
-		if (mode === 'voucher') {
-			const v = findVoucherByNo(q);
-			setResults(v ? [v] : []);
-		} else {
-			setResults(findVouchersByBeneficiaryNo(q));
-		}
-	};
+	const single = useVoucherSearchByNo(submitted?.mode === 'voucher' ? submitted.q : undefined);
+	const many = useVouchersByBeneficiaryNo(
+		submitted?.mode === 'beneficiary' ? submitted.q : undefined,
+	);
+	const searched = submitted !== null;
+	const results = !submitted
+		? []
+		: submitted.mode === 'voucher'
+			? single
+				? [single]
+				: []
+			: many;
+
+	const runSearch = () => setSubmitted({ mode, q });
 
 	return (
-		<Screen scroll={false} edges={['bottom']}>
+		<Screen scroll={false} edges={['top']}>
+			<Text className="font-display text-2xl tracking-tight">Search</Text>
+
 			<Tabs
 				value={mode}
 				onValueChange={(v) => {
 					setMode(v as Mode);
-					setSearched(false);
-					setResults([]);
+					setSubmitted(null);
 				}}
 			>
 				<TabsList className="h-11 w-full">
