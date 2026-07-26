@@ -1,8 +1,3 @@
-export function formatKES(amount?: number) {
-	if (amount == null) return '—';
-	return `KES ${amount.toLocaleString('en-KE')}`;
-}
-
 export function formatDateTime(iso?: string) {
 	if (!iso) return '—';
 	const d = new Date(iso);

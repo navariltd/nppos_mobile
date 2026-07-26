@@ -1,7 +1,8 @@
 import { SyncBadge } from '@/components/domain/badges';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { formatDateTime, formatKES } from '@/lib/format';
+import { useCurrency } from '@/hooks/currency';
+import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { PosTransaction, TransactionType } from '@/types/domain';
 import { Banknote, Gift, Undo2, type LucideIcon } from 'lucide-react-native';
@@ -34,6 +35,7 @@ export function TransactionRow({
 	onPress?: () => void;
 }) {
 	const s = TXN_TYPE_STYLE[txn.type];
+	const { format } = useCurrency();
 	return (
 		<Pressable
 			onPress={onPress}
@@ -53,7 +55,7 @@ export function TransactionRow({
 			</View>
 			<View className="items-end gap-1">
 				{txn.amount != null ? (
-					<Text className="font-display-semibold text-[15px]">{formatKES(txn.amount)}</Text>
+					<Text className="font-display-semibold text-[15px]">{format(txn.amount)}</Text>
 				) : (
 					<Text className="font-display-semibold text-[15px]">×{txn.qty}</Text>
 				)}

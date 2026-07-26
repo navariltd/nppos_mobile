@@ -17,8 +17,9 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
-import { formatKES, formatTime } from '@/lib/format';
+import { formatTime } from '@/lib/format';
 import { openPosSession, useOpenPosSession, useSessionCashTotal } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { PlayCircle, StopCircle } from 'lucide-react-native';
@@ -28,6 +29,7 @@ import { Alert, View } from 'react-native';
 export function PosSessionCard() {
 	const router = useRouter();
 	const profile = useActivePosProfile();
+	const { format, symbol } = useCurrency();
 	const session = useOpenPosSession();
 	const cashPaid = useSessionCashTotal(session?.id);
 	const [dialogOpen, setDialogOpen] = React.useState(false);
@@ -54,7 +56,7 @@ export function PosSessionCard() {
 					<View className="flex-1">
 						<Text className="font-medium">Session open · since {formatTime(session.openedAt)}</Text>
 						<Text className="text-muted-foreground text-xs">
-							Float {formatKES(session.openingFloat)} · paid out {formatKES(cashPaid)}
+							Float {format(session.openingFloat)} · paid out {format(cashPaid)}
 						</Text>
 					</View>
 					<Button
@@ -100,7 +102,7 @@ export function PosSessionCard() {
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<View className="gap-1.5">
-						<Text className="text-muted-foreground text-xs">Opening cash float (KES)</Text>
+						<Text className="text-muted-foreground text-xs">Opening cash float ({symbol})</Text>
 						<Input
 							value={float}
 							onChangeText={setFloat}

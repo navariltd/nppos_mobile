@@ -17,7 +17,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
-import { formatDate, formatKES } from '@/lib/format';
+import { useCurrency } from '@/hooks/currency';
+import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import {
 	redeemVoucherCash,
@@ -57,6 +58,7 @@ export default function VoucherDetail() {
 	const hamper = useHamper(voucher?.hamperId);
 	const redemptions = useRedemptionsForVoucher(voucher?.id);
 	const session = useOpenPosSession();
+	const { format, symbol } = useCurrency();
 	const [input, setInput] = React.useState('');
 	const [confirming, setConfirming] = React.useState(false);
 
@@ -120,7 +122,7 @@ export default function VoucherDetail() {
 
 						<View className="flex-row items-center">
 							{isCash ? (
-								<Stat label="Remaining" value={formatKES(remaining)} />
+								<Stat label="Remaining" value={format(remaining)} />
 							) : (
 								<Stat label="Remaining" value={`×${remaining} ${hamper?.name ? '' : ''}`.trim()} />
 							)}
@@ -137,7 +139,7 @@ export default function VoucherDetail() {
 								<Icon as={isCash ? Banknote : Gift} size={15} className="text-muted-foreground" />
 								<Text className="text-muted-foreground text-sm">
 									{isCash
-										? `Cash · ${formatKES(voucher.amount)} total`
+										? `Cash · ${format(voucher.amount)} total`
 										: `${hamper?.name ?? 'Hamper'} · ${voucher.qty ?? 0} total`}
 								</Text>
 							</View>
@@ -181,7 +183,7 @@ export default function VoucherDetail() {
 						<CardContent className="gap-4 pt-5">
 							<View className="gap-1.5">
 								<Text className="text-muted-foreground text-xs">
-									{isCash ? 'Amount to pay out (KES)' : 'Quantity to issue'}
+									{isCash ? `Amount to pay out (${symbol})` : 'Quantity to issue'}
 								</Text>
 								<Input
 									value={input}
@@ -191,7 +193,7 @@ export default function VoucherDetail() {
 									className="h-12 rounded-xl"
 								/>
 								<Text className="text-muted-foreground text-[11px]">
-									Up to {isCash ? formatKES(remaining) : `×${remaining}`} — you can pay/issue less.
+									Up to {isCash ? format(remaining) : `×${remaining}`} — you can pay/issue less.
 								</Text>
 							</View>
 							{!session && (
@@ -229,7 +231,7 @@ export default function VoucherDetail() {
 										{formatDate(r.redeemedAt)}
 									</Text>
 									<Text className="font-display-medium text-sm">
-										{r.type === 'cash' ? formatKES(r.amount) : `×${r.qty ?? 1}`}
+										{r.type === 'cash' ? format(r.amount) : `×${r.qty ?? 1}`}
 									</Text>
 								</View>
 							))}
@@ -245,7 +247,7 @@ export default function VoucherDetail() {
 						<AlertDialogTitle>{isCash ? 'Issue cash' : 'Issue hamper'}</AlertDialogTitle>
 						<AlertDialogDescription>
 							{isCash
-								? `Record an Entitlement Redemption of ${formatKES(value)} against ${voucher.voucherNo}?`
+								? `Record an Entitlement Redemption of ${format(value)} against ${voucher.voucherNo}?`
 								: `Issue ${value} × ${hamper?.name ?? 'hamper'} against ${voucher.voucherNo}?`}{' '}
 							This uses 1 of the voucher's {voucher.maxUses} allowed transactions.
 						</AlertDialogDescription>

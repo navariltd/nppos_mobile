@@ -18,9 +18,10 @@ import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
+import { useCurrency } from '@/hooks/currency';
 import { useOnline } from '@/hooks/online';
 import { useActivePosProfile } from '@/hooks/pos-profile';
-import { formatKES, formatTime } from '@/lib/format';
+import { formatTime } from '@/lib/format';
 import { syncNow } from '@/features/sync/engine';
 import {
 	closePosSession,
@@ -48,6 +49,7 @@ export default function Reconciliation() {
 	const session = useOpenPosSession();
 	const sessionCash = useSessionCashTotal(session?.id);
 	const { isOnline } = useOnline();
+	const { format, symbol } = useCurrency();
 	const [counted, setCounted] = React.useState('');
 
 	const expectedCash = session ? session.openingFloat - sessionCash : 0;
@@ -101,7 +103,7 @@ export default function Reconciliation() {
 						<View className="flex-row">
 							<Stat
 								label="Cash paid"
-								value={formatKES(cashTotal)}
+								value={format(cashTotal)}
 								valueClassName="text-primary-foreground"
 								labelClassName="text-primary-foreground/60"
 							/>
@@ -140,13 +142,13 @@ export default function Reconciliation() {
 								<Text className="text-muted-foreground flex-1 text-sm" numberOfLines={1}>
 									{t.subtitle}
 								</Text>
-								<Text className="font-display-medium text-sm">{formatKES(t.amount)}</Text>
+								<Text className="font-display-medium text-sm">{format(t.amount)}</Text>
 							</View>
 						))}
 						<Separator className="my-1" />
 						<View className="flex-row justify-between">
 							<Text className="font-medium">Total cash</Text>
-							<Text className="font-display-semibold">{formatKES(cashTotal)}</Text>
+							<Text className="font-display-semibold">{format(cashTotal)}</Text>
 						</View>
 					</CardContent>
 				</Card>
@@ -177,16 +179,16 @@ export default function Reconciliation() {
 								</View>
 								<View className="flex-row justify-between">
 									<Text className="text-muted-foreground text-sm">Opening float</Text>
-									<Text className="text-sm font-medium">{formatKES(session.openingFloat)}</Text>
+									<Text className="text-sm font-medium">{format(session.openingFloat)}</Text>
 								</View>
 								<View className="flex-row justify-between">
 									<Text className="text-muted-foreground text-sm">Cash paid out this session</Text>
-									<Text className="text-sm font-medium">{formatKES(sessionCash)}</Text>
+									<Text className="text-sm font-medium">{format(sessionCash)}</Text>
 								</View>
 								<Separator className="my-1" />
 								<View className="flex-row justify-between">
 									<Text className="font-medium">Expected cash in hand</Text>
-									<Text className="font-display-semibold">{formatKES(expectedCash)}</Text>
+									<Text className="font-display-semibold">{format(expectedCash)}</Text>
 								</View>
 							</CardContent>
 						</Card>
@@ -204,13 +206,13 @@ export default function Reconciliation() {
 								<AlertDialogHeader>
 									<AlertDialogTitle>Close POS session</AlertDialogTitle>
 									<AlertDialogDescription>
-										Expected cash in hand is {formatKES(expectedCash)} (float{' '}
-										{formatKES(session.openingFloat)} − payouts {formatKES(sessionCash)}). Count
+										Expected cash in hand is {format(expectedCash)} (float{' '}
+										{format(session.openingFloat)} − payouts {format(sessionCash)}). Count
 										your cash and enter the actual amount.
 									</AlertDialogDescription>
 								</AlertDialogHeader>
 								<View className="gap-1.5">
-									<Text className="text-muted-foreground text-xs">Counted cash (KES)</Text>
+									<Text className="text-muted-foreground text-xs">Counted cash ({symbol})</Text>
 									<Input
 										value={counted}
 										onChangeText={setCounted}

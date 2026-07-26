@@ -8,7 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { formatDateTime, formatKES } from '@/lib/format';
+import { useCurrency } from '@/hooks/currency';
+import { formatDateTime } from '@/lib/format';
 import { useTransaction } from '@/repositories';
 import { cn } from '@/lib/utils';
 import type { TransactionType } from '@/types/domain';
@@ -64,6 +65,7 @@ function DetailRow({
 export default function TransactionDetail() {
 	const { id } = useLocalSearchParams<{ id: string }>();
 	const txn = useTransaction(id);
+	const { format } = useCurrency();
 
 	if (!txn) {
 		return (
@@ -94,7 +96,7 @@ export default function TransactionDetail() {
 							<Text className="mt-1 text-center font-medium">{txn.title}</Text>
 							{txn.amount != null ? (
 								<Text className="font-display text-3xl tracking-tight">
-									{formatKES(txn.amount)}
+									{format(txn.amount)}
 								</Text>
 							) : (
 								<Text className="font-display text-3xl tracking-tight">×{txn.qty}</Text>

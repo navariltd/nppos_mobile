@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
-import { formatKES } from '@/lib/format';
+import { useCurrency } from '@/hooks/currency';
 import { useVoucherSearchByNo, useVouchersByBeneficiaryNo } from '@/repositories';
 import { useRouter } from 'expo-router';
 import { Search, SearchX, Ticket } from 'lucide-react-native';
@@ -23,6 +23,7 @@ type Mode = 'voucher' | 'beneficiary';
 // queries so they refresh automatically after a redemption (no stale status).
 export default function VoucherSearch() {
 	const router = useRouter();
+	const { format } = useCurrency();
 	const [mode, setMode] = React.useState<Mode>('voucher');
 	const [q, setQ] = React.useState('');
 	// The committed query (set on Search) that the live hooks run against.
@@ -105,7 +106,7 @@ export default function VoucherSearch() {
 							{i > 0 && <Separator />}
 							<ListRow
 								title={v.voucherNo}
-								subtitle={`${v.entitlementType === 'cash' ? formatKES(v.amount) : 'Hamper'} · ${v.usesCount}/${v.maxUses} uses`}
+								subtitle={`${v.entitlementType === 'cash' ? format(v.amount) : 'Hamper'} · ${v.usesCount}/${v.maxUses} uses`}
 								onPress={() => router.push(`/vouchers/${v.voucherNo}`)}
 								leading={
 									<View className="bg-primary/10 h-10 w-10 items-center justify-center rounded-xl">

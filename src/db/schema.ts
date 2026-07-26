@@ -99,7 +99,7 @@ export const posProfiles = sqliteTable('pos_profiles', {
 	name: text('name').notNull(),
 	agentId: text('agent_id').notNull(),
 	warehouse: text('warehouse').notNull(),
-	currency: text('currency').notNull().default('KES'),
+	currency: text('currency').notNull().default('SDG'),
 });
 
 // A working shift: opened before redeeming, closed at end of day. Maps to a

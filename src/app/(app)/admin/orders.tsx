@@ -2,7 +2,7 @@ import { Screen } from '@/components/domain/Screen';
 import { EmptyState, Stat } from '@/components/domain/widgets';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Text } from '@/components/ui/text';
-import { formatKES } from '@/lib/format';
+import { useCurrency } from '@/hooks/currency';
 import { useAssignments } from '@/repositories';
 import { ClipboardList } from 'lucide-react-native';
 import { View } from 'react-native';
@@ -12,6 +12,7 @@ import Animated, { FadeInDown } from 'react-native-reanimated';
 // are back-office refs carried as name strings; the ADA is what reaches the app.
 export default function Assignments() {
 	const assignments = useAssignments();
+	const { format } = useCurrency();
 	if (assignments.length === 0) {
 		return (
 			<Screen>
@@ -33,7 +34,7 @@ export default function Assignments() {
 						</CardHeader>
 						<CardContent className="gap-3">
 							<View className="flex-row">
-								<Stat label="To disburse" value={formatKES(a.amountToDisburse)} />
+								<Stat label="To disburse" value={format(a.amountToDisburse)} />
 								<Stat label="Agent" value={a.agentId} />
 							</View>
 						</CardContent>

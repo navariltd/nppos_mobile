@@ -32,14 +32,14 @@ export const posProfiles: PosProfile[] = [
 		name: 'Kibra Field POS',
 		agentId: 'AGT-014',
 		warehouse: 'WH-NRB-014',
-		currency: 'KES',
+		currency: 'SDG',
 	},
 	{
 		id: 'POSP-002',
 		name: 'Kibra Outreach POS',
 		agentId: 'AGT-014',
 		warehouse: 'WH-NRB-OUT-01',
-		currency: 'KES',
+		currency: 'SDG',
 	},
 ];
 
