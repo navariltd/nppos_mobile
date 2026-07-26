@@ -166,6 +166,9 @@ export default function Stock() {
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
+			<Text className="text-muted-foreground text-center text-xs">
+					Stocks are coupled to vouchers
+			</Text>
 		</Screen>
 	);
 }

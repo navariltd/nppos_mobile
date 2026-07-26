@@ -51,9 +51,14 @@ function DetailRow({
 	return (
 		<View className="flex-row items-center gap-3">
 			<Icon as={icon} size={17} className="text-muted-foreground" />
-			<Text className="text-muted-foreground flex-1 text-sm">{label}</Text>
+			<Text className="text-muted-foreground text-sm" numberOfLines={1}>
+				{label}
+			</Text>
 			<Text
-				className={cn('text-sm font-medium', mono && 'font-display-medium tracking-wide')}
+				className={cn(
+					'flex-1 text-right text-sm font-medium',
+					mono && 'font-display-medium tracking-wide',
+				)}
 				numberOfLines={1}
 			>
 				{value}
@@ -155,13 +160,15 @@ export default function TransactionDetail() {
 			<SectionLabel>Sync record</SectionLabel>
 			<Animated.View entering={FadeInDown.duration(300).delay(180)}>
 				<Card>
-					<CardContent className="gap-3">
+					<CardContent>
 						<DetailRow icon={Fingerprint} label="Reference" value={txn.id} mono />
-						<Separator />
-						<DetailRow icon={FileText} label="Syncs as" value={SYNCS_AS[txn.type]} />
-						{txn.serverName && (
-							<DetailRow icon={CircleCheck} label="Server document" value={txn.serverName} mono />
-						)}
+						<Separator className="my-3" />
+						<View className="gap-3">
+							<DetailRow icon={FileText} label="Syncs as" value={SYNCS_AS[txn.type]} />
+							{txn.serverName && (
+								<DetailRow icon={CircleCheck} label="Server document" value={txn.serverName} mono />
+							)}
+						</View>
 					</CardContent>
 				</Card>
 			</Animated.View>
