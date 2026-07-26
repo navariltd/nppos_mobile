@@ -149,7 +149,7 @@ export default function Profile() {
 			</Animated.View>
 
 			<Animated.View entering={FadeInDown.duration(300).delay(70)}>
-				<Card className="overflow-hidden py-0">
+				<Card className="overflow-hidden gap-0 py-0">
 					<Row
 						icon={isOnline ? Wifi : CloudOff}
 						iconClassName={isOnline ? 'text-success' : 'text-muted-foreground'}
@@ -214,7 +214,7 @@ export default function Profile() {
 			</Animated.View>
 
 			<Animated.View entering={FadeInDown.duration(300).delay(140)}>
-				<Card className="overflow-hidden py-0">
+				<Card className="overflow-hidden gap-0 py-0">
 					<Row
 						icon={scheme === 'dark' ? Moon : Sun}
 						label="Appearance"
@@ -242,7 +242,7 @@ export default function Profile() {
 			</Animated.View>
 
 			<Animated.View entering={FadeInDown.duration(300).delay(210)}>
-				<Card className="overflow-hidden py-0">
+				<Card className="overflow-hidden gap-0 py-0">
 					<Row
 						icon={Store}
 						label="POS profile"

@@ -10,7 +10,7 @@ import type { SyncStatus } from '@/types/domain';
 import { useRouter } from 'expo-router';
 import { ReceiptText } from 'lucide-react-native';
 import * as React from 'react';
-import { ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import Animated, { FadeInDown, LinearTransition } from 'react-native-reanimated';
 
 type Filter = 'all' | SyncStatus;
@@ -68,18 +68,23 @@ export default function Transactions() {
 					showsVerticalScrollIndicator={false}
 				>
 					<Animated.View layout={LinearTransition.duration(200)}>
-						<Card className="overflow-hidden py-0">
+						<Card className="overflow-hidden gap-0 py-0">
 							{list.map((t, i) => (
-								<Animated.View
+								// Pressable OUTSIDE the entering-animated view so the whole
+								// row stays tappable on Android (Reanimated + New Arch can
+								// drop touches on children of layout-animated views).
+								<Pressable
 									key={t.id}
-									entering={FadeInDown.duration(260).delay(Math.min(i * 40, 320))}
+									onPress={() => router.push(`/transactions/${t.id}`)}
+									className="active:bg-accent/60"
 								>
-									{i > 0 && <Separator />}
-									<TransactionRow
-										txn={t}
-										onPress={() => router.push(`/transactions/${t.id}`)}
-									/>
-								</Animated.View>
+									<Animated.View
+										entering={FadeInDown.duration(260).delay(Math.min(i * 40, 320))}
+									>
+										{i > 0 && <Separator />}
+										<TransactionRow txn={t} />
+									</Animated.View>
+								</Pressable>
 							))}
 						</Card>
 					</Animated.View>

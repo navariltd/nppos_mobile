@@ -13,7 +13,7 @@ import { useVoucherSearchByNo, useVouchersByBeneficiaryNo } from '@/repositories
 import { useRouter } from 'expo-router';
 import { Search, SearchX, Ticket } from 'lucide-react-native';
 import * as React from 'react';
-import { View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 type Mode = 'voucher' | 'beneficiary';
@@ -91,7 +91,7 @@ export default function VoucherSearch() {
 				</Button>
 			</View>
 
-			<Card className="flex-1 overflow-hidden py-0">
+			<Card className="flex-1 overflow-hidden gap-0 py-0">
 				{!searched ? (
 					<EmptyState
 						icon={Ticket}
@@ -101,22 +101,27 @@ export default function VoucherSearch() {
 				) : results.length === 0 ? (
 					<EmptyState icon={SearchX} title="No match" subtitle="Check the number and try again" />
 				) : (
-					results.map((v, i) => (
-						<Animated.View key={v.id} entering={FadeInDown.duration(280).delay(i * 60)}>
-							{i > 0 && <Separator />}
-							<ListRow
-								title={v.voucherNo}
-								subtitle={`${v.entitlementType === 'cash' ? format(v.amount) : 'Hamper'} · ${v.usesCount}/${v.maxUses} uses`}
-								onPress={() => router.push(`/vouchers/${v.voucherNo}`)}
-								leading={
-									<View className="bg-primary/10 h-10 w-10 items-center justify-center rounded-xl">
-										<Icon as={Ticket} size={18} className="text-primary" />
-									</View>
-								}
-								right={<VoucherStatusBadge status={v.status} />}
-							/>
-						</Animated.View>
-					))
+					<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-2">
+						{results.map((v, i) => (
+							<Animated.View
+								key={v.id}
+								entering={FadeInDown.duration(280).delay(Math.min(i * 60, 360))}
+							>
+								{i > 0 && <Separator />}
+								<ListRow
+									title={v.voucherNo}
+									subtitle={`${v.entitlementType === 'cash' ? format(v.amount) : 'Hamper'} · ${v.usesCount}/${v.maxUses} uses`}
+									onPress={() => router.push(`/vouchers/${v.voucherNo}`)}
+									leading={
+										<View className="bg-primary/10 h-10 w-10 items-center justify-center rounded-xl">
+											<Icon as={Ticket} size={18} className="text-primary" />
+										</View>
+									}
+									right={<VoucherStatusBadge status={v.status} />}
+								/>
+							</Animated.View>
+						))}
+					</ScrollView>
 				)}
 			</Card>
 		</Screen>

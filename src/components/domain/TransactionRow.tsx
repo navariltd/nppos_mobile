@@ -6,7 +6,7 @@ import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { PosTransaction, TransactionType } from '@/types/domain';
 import { Banknote, Gift, Undo2, type LucideIcon } from 'lucide-react-native';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 
 export const TXN_TYPE_STYLE: Record<
 	TransactionType,
@@ -27,21 +27,16 @@ export const TXN_TYPE_STYLE: Record<
 	},
 };
 
-export function TransactionRow({
-	txn,
-	onPress,
-}: {
-	txn: PosTransaction;
-	onPress?: () => void;
-}) {
+// Presentational only — the caller wraps this in a Pressable. Keeping the
+// touchable OUTSIDE any entering/layout-animated view is deliberate: a Pressable
+// nested inside a Reanimated layout-animated view can miss touches on Android
+// (New Architecture), leaving dead zones. See select-profile.tsx for the same
+// pattern.
+export function TransactionRow({ txn }: { txn: PosTransaction }) {
 	const s = TXN_TYPE_STYLE[txn.type];
 	const { format } = useCurrency();
 	return (
-		<Pressable
-			onPress={onPress}
-			disabled={!onPress}
-			className={cn('flex-row items-center gap-3 px-4 py-3.5', onPress && 'active:bg-accent/60')}
-		>
+		<View className="flex-row items-center gap-3 px-4 py-3.5">
 			<View className={cn('h-10 w-10 items-center justify-center rounded-xl', s.plate)}>
 				<Icon as={s.icon} size={18} className={s.tint} />
 			</View>
@@ -61,6 +56,6 @@ export function TransactionRow({
 				)}
 				<SyncBadge status={txn.status} />
 			</View>
-		</Pressable>
+		</View>
 	);
 }

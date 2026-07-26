@@ -21,8 +21,10 @@ function Alert({
     <TextClassContext.Provider
       value={cn(
         'text-sm text-foreground',
-        variant === 'destructive' && 'text-destructive',
-        className
+        variant === 'destructive' && 'text-destructive'
+        // NOTE: do NOT spread the container `className` here — it carries the
+        // banner's bg-*/border-* classes, which would paint a colored block
+        // behind the title/description text. It belongs on the View below only.
       )}>
       <View
         role="alert"
