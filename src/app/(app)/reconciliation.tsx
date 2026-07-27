@@ -28,8 +28,8 @@ import {
 	useAgentStock,
 	useOpenPosSession,
 	useSessionCashTotal,
+	useSessionTransactions,
 	useSyncCounts,
-	useTransactions,
 } from '@/repositories';
 import { useAppDispatch } from '@/store/hooks';
 import { useRouter } from 'expo-router';
@@ -42,11 +42,11 @@ export default function Reconciliation() {
 	const router = useRouter();
 	const dispatch = useAppDispatch();
 
-	const transactions = useTransactions();
 	const profile = useActivePosProfile();
 	const agentStock = useAgentStock(profile?.warehouse);
 	const { pending, conflicts } = useSyncCounts();
 	const session = useOpenPosSession();
+	const transactions = useSessionTransactions(session?.id);
 	const sessionCash = useSessionCashTotal(session?.id);
 	const { isOnline } = useOnline();
 	const { format, symbol } = useCurrency();
@@ -55,7 +55,7 @@ export default function Reconciliation() {
 	const expectedCash = session ? session.openingFloat - sessionCash : 0;
 
 	// Closing a session is the reconcile moment: record the closing entry, then
-	// flush the outbox right away if we're online (docs/NPPOS_WEB.md §policy).
+	// flush the outbox right away if we're online
 	const submitClose = async () => {
 		if (!session) return;
 		const result = closePosSession(Number(counted) || 0);

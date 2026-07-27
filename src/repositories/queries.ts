@@ -151,6 +151,20 @@ export function useTransactions(filter: 'all' | SyncStatus = 'all'): PosTransact
 	return (data ?? []).map(toTransaction);
 }
 
+// Transactions recorded within one POS session — the reconciliation screen's
+// basis, so closing session B never shows session A's activity. Newest first.
+export function useSessionTransactions(sessionId?: string): PosTransaction[] {
+	const { data } = useLiveQuery(
+		db
+			.select()
+			.from(posTransactions)
+			.where(eq(posTransactions.posSessionId, sessionId ?? NONE))
+			.orderBy(desc(posTransactions.createdAt)),
+		[sessionId],
+	);
+	return (data ?? []).map(toTransaction);
+}
+
 export function useTransaction(id?: string): PosTransaction | undefined {
 	const { data } = useLiveQuery(
 		db.select().from(posTransactions).where(eq(posTransactions.id, id ?? NONE)),
