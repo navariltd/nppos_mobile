@@ -65,8 +65,8 @@ Issue an entitlement in the app and watch the row land in `pos_transactions` (pl
 
 > Note: `npx drizzle-kit studio` does **not** work here — the DB file lives inside the app sandbox on the device, unreachable from your machine. Always go through `shift + m`.
 
-<!-- TODO(@emiliocliff): add screenshot -->
-<!-- ![Drizzle Studio browsing the on-device NPPOS database](docs/drizzle-studio.png) -->
+<img width="1512" height="825" alt="Drizzle Studio browsing the on-device NPPOS database" src="https://github.com/user-attachments/assets/d9ec8e53-7bd9-49b1-b81c-28d378c63e1b" />
+
 
 
 ---
