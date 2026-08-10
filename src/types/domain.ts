@@ -53,6 +53,7 @@ export interface Voucher {
 	maxUses: number;
 	project: string; // accounting ref (name string)
 	assignmentId?: string;
+	image?: string;
 }
 
 export interface HamperItem {

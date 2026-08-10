@@ -68,6 +68,7 @@ export const vouchers = sqliteTable(
 		status: text('status', { enum: ['active', 'partially_redeemed', 'redeemed', 'expired'] })
 			.notNull()
 			.default('active'),
+		image: text('image'),
 		usesCount: integer('uses_count').notNull().default(0),
 		maxUses: integer('max_uses').notNull().default(2), // hard limit (AGENTS.md rule 4)
 		// accounting ref that posts on the redemption (a plain name string)

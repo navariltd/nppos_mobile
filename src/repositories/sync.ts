@@ -226,6 +226,7 @@ export function applyPull(pull: PullResponse): number {
 				maxUses: v.maxUses,
 				project: v.project,
 				assignmentId: v.assignmentId ?? null,
+				image: v.image ?? null,
 			};
 			tx.insert(vouchers)
 				.values(row)

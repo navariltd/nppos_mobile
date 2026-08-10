@@ -65,6 +65,7 @@ interface FrappePull {
 		max_uses: number;
 		project: string;
 		assignment_id?: string;
+		image?: string; // site-relative QR file url, e.g. /files/QNAK4OWSW-qr.png
 	}[];
 	hampers: {
 		id: string;
@@ -228,6 +229,7 @@ export class FrappeAdapter implements ApiAdapter {
 				maxUses: v.max_uses,
 				project: v.project,
 				assignmentId: v.assignment_id,
+				image: v.image || undefined,
 			})),
 			hampers: m.hampers.map((h) => ({
 				id: h.id,

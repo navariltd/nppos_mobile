@@ -47,6 +47,7 @@ export function toVoucher(r: typeof vouchers.$inferSelect): Voucher {
 		maxUses: r.maxUses,
 		project: r.project,
 		assignmentId: r.assignmentId ?? undefined,
+		image: r.image ?? undefined,
 	};
 }
 

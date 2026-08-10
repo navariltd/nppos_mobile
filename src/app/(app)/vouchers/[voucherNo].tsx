@@ -20,6 +20,7 @@ import { Text } from '@/components/ui/text';
 import { useCurrency } from '@/hooks/currency';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { fileUrl } from '@/lib/voucher-code';
 import {
 	redeemVoucherCash,
 	redeemVoucherGoods,
@@ -31,7 +32,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Banknote, CalendarDays, FolderOpen, Gift, Info, SearchX } from 'lucide-react-native';
 import * as React from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Image, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 // The 2-use hard limit, made visible: one dot per allowed use.
@@ -71,6 +72,7 @@ export default function VoucherDetail() {
 	}
 
 	const isCash = voucher.entitlementType === 'cash';
+	const qrUrl = fileUrl(voucher.image);
 	const remaining = isCash
 		? voucher.amount - voucher.redeemedAmount
 		: (voucher.qty ?? 0) - voucher.redeemedQty;
@@ -105,8 +107,8 @@ export default function VoucherDetail() {
 			<Animated.View entering={FadeInDown.duration(320)}>
 				<Card className="overflow-hidden">
 					<CardContent className="gap-4 pt-5">
-						<View className="flex-row items-start justify-between">
-							<View>
+						<View className="flex-row items-start justify-between gap-3">
+							<View className="flex-1">
 								<Text className="font-display text-xl tracking-tight">{voucher.voucherNo}</Text>
 								{voucher.beneficiaryNo && (
 									<Text className="text-muted-foreground mt-0.5 text-sm">
@@ -114,7 +116,18 @@ export default function VoucherDetail() {
 									</Text>
 								)}
 							</View>
+							<View className="items-end gap-2">
 							<VoucherStatusBadge status={voucher.status} />
+								{qrUrl && (
+									<Image
+										source={{ uri: qrUrl }}
+										style={{ width: 64, height: 64 }}
+										resizeMode="contain"
+										className="rounded-md bg-white"
+										accessibilityLabel={`QR code for ${voucher.voucherNo}`}
+									/>
+								)}
+							</View>
 						</View>
 
 						{/* Ticket perforation */}
