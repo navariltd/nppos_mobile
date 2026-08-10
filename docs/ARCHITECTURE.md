@@ -162,7 +162,8 @@ Login (email + password)
     from Profile → "Switch POS profile" when no session is open)
     └── POS Dashboard (role-aware)
     ├── Cash Withdrawal Vouchers
-    │   ├── Search (voucher no = exact match · ben no = list active vouchers)
+    │   ├── Search (voucher no = exact match · ben no = list active vouchers ·
+    │   │            QR scan → voucher no → opens the voucher directly)
     │   ├── Voucher detail — entitlements, uses left, validity
     │   └── Issue entitlement → cash: Payment Entry · hamper: Material Issue
     ├── Goods / Hampers
@@ -265,11 +266,12 @@ Dependency direction: `app → features/components/hooks → repositories → db
 - **Token storage**: the auth token lives in **expo-secure-store** (OS keystore), held in memory by the ApiAdapter, restored on relaunch by `AuthBootstrap`. It is **never** in redux-persist/AsyncStorage (plaintext), and the **password is never stored**. Redux persists only `isAuthenticated`, `agent`, `role`, `activePosProfileId`. Offline PIN re-auth (§7.1) remains a separate future flow.
 - **Stock is per warehouse** (backend: Bin): `agent_stock` is keyed `(warehouse, hamper)`; goods issues and stock adjustments always act on the active profile's warehouse. Beneficiaries/vouchers/entitlements stay **agent-scoped** (they follow the person via the ADA, not the warehouse).
 - **Switching POS profiles** (Profile screen) requires no open POS session — close/reconcile first; a session's float math belongs to one profile. **Sign-out is a full-system logout**: it auto-closes any open session and clears the active profile, so the next login re-picks one.
+- **Shift boundaries are online-only** (`src/features/sync/preflight.ts`). Opening a session, closing one, and signing out each run a full flush + pull first and abort if anything is still queued afterwards: opening must start from current vouchers/stock with no stale push in flight, closing's expected-cash figure is only true once every transaction it counts has landed, and sign-out closes the shift so it inherits both. The opening is then pushed immediately, so its POS Opening Entry **server name** exists before anything references it — session refs (`pos_closing.session`, `posSession`) are rewritten from the local session id to that name on the way out of the outbox (`resolveSessionRefs` in `src/repositories/sync.ts`). The one exception is the sign-out on the profile picker, kept ungated as the only escape from a screen with no other exit.
 
 **Settle early**
 1. **Offline login** — first login must be online (fetch token + assignments); afterwards re-auth with a locally stored PIN (hash in expo-secure-store). Define token refresh/expiry behavior when offline for days.
 2. **Dev client vs Expo Go** — Expo Go is fine until we need SQLCipher, camera/QR voucher scanning, or receipt printers; plan the EAS dev-client switch as its own step.
-3. **Voucher capture UX** — manual entry now; QR/barcode scan (expo-camera) later. Voucher numbers should be checksummed to catch typos.
+3. **Voucher capture UX** — ~~manual entry now; QR/barcode scan (expo-camera) later~~ **done: scan on the Search screen** (`src/components/domain/QrScanner.tsx`, expo-camera `CameraView`). The backend generates one QR per Entitlement Voucher encoding its voucher number and attaches it to the voucher's `image` field (`/files/<voucherNo>-qr.png`), which the device pulls and can render. Manual entry stays as the fallback. Still open: checksummed voucher numbers to catch typos on manual entry.
 4. **Conflict resolution UX** — ~~who clears a `conflict` transaction (agent vs admin)~~ **decided: admin, online-only**. Still open: the exact audit trail (who resolved what, when, and how it's recorded backend-side).
 5. **Multi-device / reassignment** — same agent on two devices, or beneficiary reassigned mid-day: server-side revalidation is the backstop; decide how aggressively to re-pull.
 6. **Clock integrity** — offline timestamps come from the device; record both device time and sync time, never trust device time for validity-window enforcement alone.

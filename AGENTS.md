@@ -36,7 +36,7 @@ Read the exact versioned docs at https://docs.expo.dev/versions/v54.0.0/ before 
 ## Hard rules
 
 1. Domain data lives in SQLite; Redux holds no domain rows.
-2. All writes are offline-capable **except** the card/bank flow — it requires connectivity; disable it in the UI when offline.
+2. All writes are offline-capable **except** the card/bank flow and the **shift boundaries** — opening a POS session, closing one, and signing out all require connectivity and a clean outbox (`src/features/sync/preflight.ts`: flush + pull, then refuse if anything is still queued). Distribution itself — redemptions, stock moves — stays fully offline. Disable those actions in the UI when offline.
 3. Every mutation gets a client UUID before it leaves the device; sync must be idempotent and retry-safe.
 4. Voucher limit (2 uses) and validity are validated locally at issue time **and** re-validated server-side at sync; conflicts land in a review state, never silently dropped. Conflict resolution is an **admin** action and happens **online**.
 5. All transactions carry project + disbursement-order references.
