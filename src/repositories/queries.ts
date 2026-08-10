@@ -233,6 +233,18 @@ export function useOpenPosSession(): PosSession | undefined {
 	return data?.[0] ? toPosSession(data[0]) : undefined;
 }
 
+// Did this session's opening actually land on the backend? Imperative because
+// the caller (opening a shift) needs the answer right after its push, not a
+// subscription. Null server name = the POS Opening Entry doesn't exist yet.
+export function posSessionServerName(sessionId: string): string | undefined {
+	const row = db
+		.select({ serverName: posSessions.openingServerName })
+		.from(posSessions)
+		.where(eq(posSessions.id, sessionId))
+		.get();
+	return row?.serverName ?? undefined;
+}
+
 export function usePosSessions(): PosSession[] {
 	const { data } = useLiveQuery(
 		db.select().from(posSessions).orderBy(desc(posSessions.openedAt)),

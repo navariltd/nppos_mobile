@@ -93,6 +93,39 @@ export function resetLocalData(): void {
 
 // ---- push side --------------------------------------------------------------
 
+// Anything left to push? Used by the shift-boundary preflight (opening/closing
+// a session and signing out all demand a clean outbox).
+export function pendingOutboxCount(): number {
+	return db.select({ id: outbox.id }).from(outbox).all().length;
+}
+
+// Session references are stored as the LOCAL session id (that's all a mutation
+// knows) but must leave the device as the POS Opening Entry's server name — the
+// backend resolves them as document names. Shifts are opened online and pushed
+// immediately, so the name is always there by the time anything references it;
+// if it somehow isn't, the local id goes out unchanged and the server rejects
+// it rather than guessing.
+function serverSessionName(localId: string): string | undefined {
+	const row = db
+		.select({ serverName: posSessions.openingServerName })
+		.from(posSessions)
+		.where(eq(posSessions.id, localId))
+		.get();
+	return row?.serverName ?? undefined;
+}
+
+function resolveSessionRefs(payload: OutboxPayload): OutboxPayload {
+	if (payload.kind === 'pos_closing') {
+		const serverName = serverSessionName(payload.session);
+		return serverName ? { ...payload, session: serverName } : payload;
+	}
+	if (payload.kind === 'cash_payment' || payload.kind === 'goods_issue') {
+		const serverName = serverSessionName(payload.posSession);
+		return serverName ? { ...payload, posSession: serverName } : payload;
+	}
+	return payload;
+}
+
 // FIFO batch of items due for a push (never-retried or past their backoff).
 export function getOutboxBatch(limit = 50): OutboxItem[] {
 	const now = nowIso();
@@ -105,7 +138,7 @@ export function getOutboxBatch(limit = 50): OutboxItem[] {
 		.all()
 		.map((r) => ({
 			id: r.id,
-			payload: JSON.parse(r.payload) as OutboxPayload,
+			payload: resolveSessionRefs(JSON.parse(r.payload) as OutboxPayload),
 			attemptCount: r.attemptCount,
 			createdAt: r.createdAt,
 		}));
@@ -122,9 +155,13 @@ export function markPushAccepted(item: OutboxItem, serverName: string): void {
 				.where(eq(posSessions.id, item.id))
 				.run();
 		} else if (item.payload.kind === 'pos_closing') {
+			// `session` left the device as the POS Opening Entry's server name
+			// (resolveSessionRefs) but the row is keyed by the local session id —
+			// match either form.
+			const ref = item.payload.session;
 			tx.update(posSessions)
 				.set({ closingServerName: serverName })
-				.where(eq(posSessions.id, item.payload.session))
+				.where(or(eq(posSessions.id, ref), eq(posSessions.openingServerName, ref)))
 				.run();
 		}
 		// Most kinds also have a matching pos_transactions row (same id).

@@ -22,6 +22,7 @@ import { Text } from '@/components/ui/text';
 import { useOnline } from '@/hooks/online';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { syncNow } from '@/features/sync/engine';
+import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
 import { closePosSession, useOpenPosSession, useSyncCounts } from '@/repositories';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { useSession } from '@/hooks/session';
@@ -88,6 +89,7 @@ export default function Profile() {
 	const { pending, conflicts } = useSyncCounts();
 	const openSession = useOpenPosSession();
 	const posProfile = useActivePosProfile();
+	const preflight = useShiftPreflight();
 
 	// Switching the working context mid-shift would orphan the open session's
 	// float/expected-cash math — demand a proper close (reconciliation) first.
@@ -102,18 +104,34 @@ export default function Profile() {
 		router.push('/select-profile');
 	};
 
-	// Never leave a session dangling: sign-out auto-closes it (counted cash
-	// defaults to expected, flagged autoClosed) and kicks a sync if online —
-	// fire-and-forget; anything unsent stays queued for the next login.
-	const handleSignOut = () => {
+	// Sign-out is ONLINE-ONLY and leaves nothing behind: sync everything first,
+	// then auto-close any open shift (counted cash defaults to expected, flagged
+	// autoClosed) and push that too. A device that signs out with work still
+	// queued would strand it until someone logs back in on this same device.
+	const handleSignOut = async () => {
+		const pre = await preflight.run('sign out');
+		if (!pre.ok) {
+			Alert.alert('Cannot sign out', pre.reason);
+			return;
+		}
+
 		if (openSession) {
-			closePosSession();
-			if (isOnline) {
-				dispatch(syncNow())
-					.unwrap()
-					.catch(() => {});
+			const result = closePosSession();
+			if (!result.ok) {
+				Alert.alert('Cannot sign out', result.reason);
+				return;
+			}
+			try {
+				await flushNow(dispatch);
+			} catch {
+				Alert.alert(
+					'Cannot sign out',
+					'Your shift was closed but the POS Closing Entry has not reached the server. Stay signed in until it syncs.',
+				);
+				return;
 			}
 		}
+
 		signOut();
 		router.replace('/login');
 	};
@@ -270,9 +288,11 @@ export default function Profile() {
 			<Animated.View entering={FadeInDown.duration(300).delay(280)} className="gap-4">
 				<AlertDialog>
 					<AlertDialogTrigger asChild>
-						<Button variant="outline">
-							<Icon as={LogOut} size={18} className="text-destructive" />
-							<Text className="text-destructive">Sign out</Text>
+						<Button variant="outline" disabled={!isOnline || preflight.isRunning}>
+							<Icon as={isOnline ? LogOut : CloudOff} size={18} className="text-destructive" />
+							<Text className="text-destructive">
+								{preflight.isRunning ? 'Syncing…' : isOnline ? 'Sign out' : 'Sign out (offline)'}
+							</Text>
 						</Button>
 					</AlertDialogTrigger>
 					<AlertDialogContent>
@@ -280,8 +300,8 @@ export default function Profile() {
 							<AlertDialogTitle>Sign out</AlertDialogTitle>
 							<AlertDialogDescription>
 								{openSession
-									? `Your POS session is still open — it will be closed and reconciled at the expected cash amount${isOnline ? ' and synced' : ', queued to sync when back online'}. Unsynced work stays safe on this device.`
-									: 'End this session? Unsynced work stays safe on this device.'}
+									? 'Everything is synced first, then your open POS session is closed and reconciled at the expected cash amount. Sign-out stops if anything fails to reach the server.'
+									: 'Everything is synced first. Sign-out stops if anything fails to reach the server.'}
 							</AlertDialogDescription>
 						</AlertDialogHeader>
 						<AlertDialogFooter>

@@ -1,6 +1,11 @@
 // Shift control on the dashboard. Issuing (cash/goods/card) is blocked until a
 // session is open; closing happens on the reconciliation screen. Maps to
 // ERPNext POS Opening/Closing Entries — see docs/FRAPPE_BACKEND.md.
+//
+// Opening a shift is ONLINE-ONLY (see features/sync/preflight.ts): the device
+// first flushes anything left over and pulls fresh vouchers/stock, then creates
+// the session and pushes it straight away, so the POS Opening Entry exists
+// server-side before the first redemption references it.
 
 import {
 	AlertDialog,
@@ -17,33 +22,67 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
+import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
 import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { formatTime } from '@/lib/format';
-import { openPosSession, useOpenPosSession, useSessionCashTotal } from '@/repositories';
+import {
+	openPosSession,
+	posSessionServerName,
+	useOpenPosSession,
+	useSessionCashTotal,
+} from '@/repositories';
+import { useAppDispatch } from '@/store/hooks';
 import { useRouter } from 'expo-router';
-import { PlayCircle, StopCircle } from 'lucide-react-native';
+import { CloudOff, PlayCircle, StopCircle } from 'lucide-react-native';
 import * as React from 'react';
 import { Alert, View } from 'react-native';
 
 export function PosSessionCard() {
 	const router = useRouter();
+	const dispatch = useAppDispatch();
 	const profile = useActivePosProfile();
 	const { format, symbol } = useCurrency();
 	const session = useOpenPosSession();
 	const cashPaid = useSessionCashTotal(session?.id);
+	const preflight = useShiftPreflight();
 	const [dialogOpen, setDialogOpen] = React.useState(false);
 	const [float, setFloat] = React.useState('');
 
-	const open = () => {
+	const open = async () => {
 		if (!profile) {
 			Alert.alert('Could not open session', 'No active POS profile.');
 			return;
 		}
-		const result = openPosSession(Number(float) || 0, profile.id);
 		setDialogOpen(false);
+
+		// Level with the backend first — nothing queued, everything pulled.
+		const pre = await preflight.run('open a POS session');
+		if (!pre.ok) {
+			Alert.alert('Cannot open session', pre.reason);
+			return;
+		}
+
+		const result = openPosSession(Number(float) || 0, profile.id);
+		if (!result.ok) {
+			Alert.alert('Could not open session', result.reason);
+			return;
+		}
 		setFloat('');
-		if (!result.ok) Alert.alert('Could not open session', result.reason);
+
+		// Push the opening immediately: everything issued during the shift
+		// references the POS Opening Entry by its server name.
+		try {
+			await flushNow(dispatch);
+		} catch {
+			// fall through to the server-name check below
+		}
+		if (!posSessionServerName(result.transactionId)) {
+			Alert.alert(
+				'Session opened, but not on the server',
+				'The POS Opening Entry has not been accepted yet. It will retry automatically — close and reopen the shift if this keeps happening.',
+			);
+		}
 	};
 
 	if (session) {
@@ -82,12 +121,24 @@ export function PosSessionCard() {
 					<View className="flex-1">
 						<Text className="font-medium">No open POS session</Text>
 						<Text className="text-muted-foreground text-xs">
-							Open one to start issuing · {profile?.name ?? 'no profile'}
+							{preflight.isRunning
+								? 'Syncing before opening…'
+								: preflight.isOnline
+									? `Open one to start issuing · ${profile?.name ?? 'no profile'}`
+									: 'Go online to open a shift'}
 						</Text>
 					</View>
-					<Button size="sm" onPress={() => setDialogOpen(true)}>
-						<Icon as={PlayCircle} size={15} className="text-primary-foreground" />
-						<Text>Open</Text>
+					<Button
+						size="sm"
+						disabled={!preflight.isOnline || preflight.isRunning}
+						onPress={() => setDialogOpen(true)}
+					>
+						<Icon
+							as={preflight.isOnline ? PlayCircle : CloudOff}
+							size={15}
+							className="text-primary-foreground"
+						/>
+						<Text>{preflight.isRunning ? 'Working…' : 'Open'}</Text>
 					</Button>
 				</CardContent>
 			</Card>
@@ -97,8 +148,9 @@ export function PosSessionCard() {
 					<AlertDialogHeader>
 						<AlertDialogTitle>Open POS session</AlertDialogTitle>
 						<AlertDialogDescription>
-							Count the cash float you are starting the shift with. This becomes the POS
-							Opening Entry when it syncs.
+							Count the cash float you are starting the shift with. Opening syncs first —
+							anything still queued is sent and today's vouchers and stock are pulled — then
+							submits the POS Opening Entry.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<View className="gap-1.5">

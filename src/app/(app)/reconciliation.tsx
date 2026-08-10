@@ -19,10 +19,9 @@ import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
 import { useCurrency } from '@/hooks/currency';
-import { useOnline } from '@/hooks/online';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { formatTime } from '@/lib/format';
-import { syncNow } from '@/features/sync/engine';
+import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
 import {
 	closePosSession,
 	useAgentStock,
@@ -33,7 +32,7 @@ import {
 } from '@/repositories';
 import { useAppDispatch } from '@/store/hooks';
 import { useRouter } from 'expo-router';
-import { ClipboardCheck, TriangleAlert } from 'lucide-react-native';
+import { ClipboardCheck, CloudOff, TriangleAlert } from 'lucide-react-native';
 import * as React from 'react';
 import { Alert, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -48,40 +47,42 @@ export default function Reconciliation() {
 	const session = useOpenPosSession();
 	const transactions = useSessionTransactions(session?.id);
 	const sessionCash = useSessionCashTotal(session?.id);
-	const { isOnline } = useOnline();
+	const preflight = useShiftPreflight();
 	const { format, symbol } = useCurrency();
 	const [counted, setCounted] = React.useState('');
 
 	const expectedCash = session ? session.openingFloat - sessionCash : 0;
 
-	// Closing a session is the reconcile moment: record the closing entry, then
-	// flush the outbox right away if we're online
+	// Closing is the reconcile moment, and it is ONLINE-ONLY: every transaction
+	// the closing entry accounts for must already be on the server, otherwise
+	// its expected-cash figure is a guess. So sync FIRST (preflight), then write
+	// the closing entry, then push it.
 	const submitClose = async () => {
 		if (!session) return;
+
+		const pre = await preflight.run('close the session');
+		if (!pre.ok) {
+			Alert.alert('Cannot close session', pre.reason);
+			return;
+		}
+
 		const result = closePosSession(Number(counted) || 0);
 		if (!result.ok) {
 			Alert.alert('Could not close', result.reason);
 			return;
 		}
-		if (isOnline) {
-			try {
-				const r = await dispatch(syncNow()).unwrap();
-				Alert.alert(
-					'Session closed & synced',
-					`POS Closing Entry submitted — ${r.pushed} item${r.pushed === 1 ? '' : 's'} synced${r.conflicts ? `, ${r.conflicts} need review` : ''}.`,
-					[{ text: 'Done', onPress: () => router.back() }],
-				);
-			} catch {
-				Alert.alert(
-					'Session closed',
-					'Sync did not finish — everything is queued and will retry automatically.',
-					[{ text: 'Done', onPress: () => router.back() }],
-				);
-			}
-		} else {
+
+		try {
+			const r = await flushNow(dispatch);
 			Alert.alert(
-				'Session closed',
-				'Offline — the POS Closing Entry is queued and will sync when you reconnect.',
+				'Session closed & synced',
+				`POS Closing Entry submitted — ${r.pushed} item${r.pushed === 1 ? '' : 's'} synced${r.conflicts ? `, ${r.conflicts} need review` : ''}.`,
+				[{ text: 'Done', onPress: () => router.back() }],
+			);
+		} catch {
+			Alert.alert(
+				'Session closed locally',
+				'The POS Closing Entry did not reach the server — it stays queued and retries automatically.',
 				[{ text: 'Done', onPress: () => router.back() }],
 			);
 		}
@@ -194,12 +195,26 @@ export default function Reconciliation() {
 						</Card>
 					</Animated.View>
 
+					{!preflight.isOnline && (
+						<Animated.View entering={FadeInDown.duration(300).delay(210)}>
+							<AlertBanner icon={CloudOff} className="border-warning/40 bg-warning/10">
+								<AlertTitle className="text-warning">Offline</AlertTitle>
+								<AlertDescription className="text-warning">
+									Closing a shift needs a connection — every transaction has to reach the server
+									before the closing entry can account for it.
+								</AlertDescription>
+							</AlertBanner>
+						</Animated.View>
+					)}
+
 					<Animated.View entering={FadeInDown.duration(300).delay(240)}>
 						<AlertDialog>
 							<AlertDialogTrigger asChild>
-								<Button size="lg">
+								<Button size="lg" disabled={!preflight.isOnline || preflight.isRunning}>
 									<Icon as={ClipboardCheck} size={20} className="text-primary-foreground" />
-									<Text>Close session & submit</Text>
+									<Text>
+										{preflight.isRunning ? 'Syncing…' : 'Close session & submit'}
+									</Text>
 								</Button>
 							</AlertDialogTrigger>
 							<AlertDialogContent>
