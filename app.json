@@ -35,6 +35,14 @@
       "expo-sqlite",
       "expo-secure-store",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "NPPOS uses the camera to scan voucher QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",

@@ -117,7 +117,7 @@ export default function VoucherDetail() {
 								)}
 							</View>
 							<View className="items-end gap-2">
-							<VoucherStatusBadge status={voucher.status} />
+								<VoucherStatusBadge status={voucher.status} />
 								{qrUrl && (
 									<Image
 										source={{ uri: qrUrl }}

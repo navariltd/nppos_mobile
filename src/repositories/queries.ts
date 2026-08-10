@@ -90,6 +90,21 @@ export function useVoucherSearchByNo(voucherNo?: string): Voucher | undefined {
 	return data?.[0] ? toVoucher(data[0]) : undefined;
 }
 
+// One-shot version of the search above, for callers that need an answer now
+// rather than a subscription — the QR scanner decides whether to jump straight
+// to the voucher or fall back to showing "no match".
+export function findVoucherByNo(voucherNo: string): Voucher | undefined {
+	const q = voucherNo.trim().toUpperCase();
+	if (!q) return undefined;
+	const rows = db
+		.select()
+		.from(vouchers)
+		.where(sql`upper(${vouchers.voucherNo}) = ${q}`)
+		.limit(1)
+		.all();
+	return rows[0] ? toVoucher(rows[0]) : undefined;
+}
+
 export function useVouchersByBeneficiaryNo(beneficiaryNo?: string): Voucher[] {
 	const q = (beneficiaryNo ?? '').trim().toUpperCase();
 	const { data } = useLiveQuery(

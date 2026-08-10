@@ -1,4 +1,5 @@
 import { VoucherStatusBadge } from '@/components/domain/badges';
+import { QrScanner } from '@/components/domain/QrScanner';
 import { Screen } from '@/components/domain/Screen';
 import { EmptyState, ListRow } from '@/components/domain/widgets';
 import { Button } from '@/components/ui/button';
@@ -9,9 +10,9 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { useCurrency } from '@/hooks/currency';
-import { useVoucherSearchByNo, useVouchersByBeneficiaryNo } from '@/repositories';
+import { findVoucherByNo, useVoucherSearchByNo, useVouchersByBeneficiaryNo } from '@/repositories';
 import { useRouter } from 'expo-router';
-import { Search, SearchX, Ticket } from 'lucide-react-native';
+import { ScanLine, Search, SearchX, Ticket } from 'lucide-react-native';
 import * as React from 'react';
 import { ScrollView, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -28,6 +29,7 @@ export default function VoucherSearch() {
 	const [q, setQ] = React.useState('');
 	// The committed query (set on Search) that the live hooks run against.
 	const [submitted, setSubmitted] = React.useState<{ mode: Mode; q: string } | null>(null);
+	const [scanning, setScanning] = React.useState(false);
 
 	const single = useVoucherSearchByNo(submitted?.mode === 'voucher' ? submitted.q : undefined);
 	const many = useVouchersByBeneficiaryNo(
@@ -43,6 +45,18 @@ export default function VoucherSearch() {
 			: many;
 
 	const runSearch = () => setSubmitted({ mode, q });
+
+	// A scanned QR always carries a voucher number (never a beneficiary no), so
+	// the scan switches to voucher mode and runs the search itself. When the
+	// voucher is already on the device, skip the result list and open it — that's
+	// the point of scanning at a distribution point.
+	const onScan = (voucherNo: string) => {
+		setMode('voucher');
+		setQ(voucherNo);
+		setSubmitted({ mode: 'voucher', q: voucherNo });
+		const match = findVoucherByNo(voucherNo);
+		if (match) router.push(`/vouchers/${match.voucherNo}`);
+	};
 
 	return (
 		<Screen scroll={false} edges={['top']}>
@@ -67,7 +81,7 @@ export default function VoucherSearch() {
 
 			<Text className="text-muted-foreground text-sm">
 				{mode === 'voucher'
-					? 'Exact-match by voucher number.'
+					? 'Exact-match by voucher number — or scan the voucher QR.'
 					: 'Lists all active vouchers for a beneficiary number.'}
 			</Text>
 
@@ -86,17 +100,28 @@ export default function VoucherSearch() {
 						onSubmitEditing={runSearch}
 					/>
 				</View>
+				<Button
+					size="icon"
+					variant="outline"
+					className="h-12 w-12 rounded-xl"
+					accessibilityLabel="Scan voucher QR code"
+					onPress={() => setScanning(true)}
+				>
+					<Icon as={ScanLine} size={20} className="text-foreground" />
+				</Button>
 				<Button size="lg" className="h-12 rounded-xl px-5" onPress={runSearch}>
 					<Text>Search</Text>
 				</Button>
 			</View>
+
+			<QrScanner visible={scanning} onClose={() => setScanning(false)} onScan={onScan} />
 
 			<Card className="flex-1 overflow-hidden gap-0 py-0">
 				{!searched ? (
 					<EmptyState
 						icon={Ticket}
 						title="Search a voucher"
-						subtitle="Try V-2026-88231 (cash), V-2026-88245 (hamper) or B-9001"
+						subtitle="Scan the voucher QR, or type a voucher/beneficiary number"
 					/>
 				) : results.length === 0 ? (
 					<EmptyState icon={SearchX} title="No match" subtitle="Check the number and try again" />
