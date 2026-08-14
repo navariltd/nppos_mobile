@@ -114,7 +114,21 @@ Response `message` — exactly one of:
 | `goods_issue` | `entitlement`, `hamper`, `qty`, `warehouse`, `voucherNo?`, `beneficiary?`, `posSession` | Voucher: **Entitlement Redemption** (goods type → auto Stock Entry). Beneficiary: **Stock Entry (Material Issue)** from `warehouse`, linked to project/DO. |
 | `stock_return` / `stock_damaged` | `warehouse`, `hamper`, `qty` | **Stock Entry** out of `warehouse` (damaged → write-off target per company settings). |
 | `pos_opening` | `posProfile`, `openingFloat` | **POS Opening Entry** (cash mode, one balance row = the float). `period_start_date` comes from `created_at` — it is half the retry key, so don't substitute server time. |
-| `pos_closing` | `session`, `openingFloat`, `paidOut`, `expectedCash`, `countedCash`, `difference`, `autoClosed` | **POS Closing Entry** linked to the POS Opening Entry **named** by `payload.session`. Note: a disbursement POS pays cash OUT (expected = float − payouts). `autoClosed: true` = counted was assumed at sign-out, flag for review. |
+| `pos_closing` | `session`, `openingFloat`, `paidOut`, `expectedCash`, `countedCash`, `difference`, `autoClosed`, `photo?` | **POS Closing Entry** linked to the POS Opening Entry **named** by `payload.session`. Note: a disbursement POS pays cash OUT (expected = float − payouts). `autoClosed: true` = counted was assumed at sign-out, flag for review. |
+
+`pos_closing.photo` is the optional close-out photo (a signed distribution
+sheet or fingerprint slip) — `{ name, mime, data }` with `data` base64. The
+handler attaches it as a private **File** on the closing entry; it must never be
+fatal (a bad image cannot be allowed to strand an agent mid-close) and must skip
+when the doc already carries an attachment, so a retry doesn't duplicate it.
+Closing is online-only, so the image ships inside the push rather than as a
+separate upload — one request, one idempotency key, no orphan files.
+
+`cash_payment` / `goods_issue` must stamp **`pos_opening_entry`** on the
+Entitlement Redemption from `payload.posSession` (not just `pos_profile`). The
+POS Closing Entry autofills its Linked Redemptions child table from submitted
+redemptions sharing its `pos_opening_entry` — without the stamp that table comes
+out empty. Goods redemptions also copy the voucher's `bom`.
 
 Session refs (`pos_closing.session`, `posSession`) arrive as POS Opening Entry
 **document names**: opening a shift is online-only and pushed immediately, so
@@ -143,29 +157,38 @@ new cursors (typically "now", per collection):
 
 ```json
 {
-  "projects":            [{ "id", "name", "code" }],
-  "disbursement_orders": [{ "id", "name", "project_id", "status",
-                            "total_beneficiaries", "issued_count" }],
-  "assignments":         [{ "id", "disbursement_order_id", "agent_id",
-                            "date", "amount_to_disburse" }],
-  "beneficiaries":       [{ "id", "beneficiary_no", "name", "national_id",
-                            "phone", "household_size", "project_id",
-                            "assignment_id" }],
-  "vouchers":            [{ "id", "voucher_no", "beneficiary_no",
-                            "entitlement_type", "amount", "valid_from",
-                            "valid_to", "status", "uses_count", "max_uses",
-                            "project_id", "disbursement_order_id", "image" }],
-  "entitlements":        [{ "id", "type", "hamper_id", "qty", "amount",
-                            "status", "beneficiary_id", "voucher_id",
-                            "project_id", "disbursement_order_id" }],
-  "hampers":             [{ "id", "name", "items": [{ "item_name", "unit",
-                            "qty_per_household" }] }],
-  "agent_stock":         [{ "warehouse", "hamper_id", "hamper_name",
-                            "on_hand", "issued_today", "damaged" }],
-  "pos_profiles":        [{ "id", "name", "agent_id", "warehouse", "currency" }],
-  "cursors":             { "projects": "2026-07-21T09:15:00Z", ... }
+  "assignments":   [{ "id", "agent_id", "project", "disbursement_order",
+                      "date", "amount_to_disburse" }],
+  "vouchers":      [{ "id", "voucher_no", "beneficiary_no", "entitlement_type",
+                      "amount", "hamper_id", "bom_id", "qty", "uom", "rate",
+                      "redeemed_amount", "redeemed_qty", "valid_from",
+                      "valid_to", "status", "uses_count", "max_uses",
+                      "project", "assignment_id", "image", "doc" }],
+  "boms":          [{ "id", "item_code", "item_name", "quantity", "uom",
+                      "items": [{ "item_code", "item_name", "unit", "qty" }] }],
+  "hampers":       [{ "id", "name", "bom_id", "items": [{ "item_name", "unit",
+                      "qty_per_household" }] }],
+  "agent_stock":   [{ "warehouse", "hamper_id", "hamper_name", "bom_id",
+                      "on_hand", "issued_today", "damaged" }],
+  "pos_profiles":  [{ "id", "name", "agent_id", "warehouse", "currency" }],
+  "beneficiaries": [{ "id", "full_name", "id_number", "status", "phone",
+                      "household_size", "beneficiary_type", "district" }],
+  "cursors":       { "vouchers": "2026-07-21T09:15:00Z", ... }
 }
 ```
+
+`boms` carries what a hamper actually contains (backend: BOM + BOM Item). Two
+sources feed it: the BOM a goods voucher **names** (`Entitlement Voucher.bom`,
+surfaced as `vouchers[].bom_id`) — that's what the agent hands over — and the
+default BOM of each stock item (`agent_stock[].bom_id`), so the stock screen can
+show what one unit in the warehouse holds. They are not always the same BOM.
+Vouchers issued before the backend gained `bom` have `bom_id: null`; the device
+then falls back to the item's default-BOM expansion in `hampers[].items`.
+
+`beneficiaries` covers only the parties on the vouchers being returned, and only
+the identity fields an agent needs to confirm the person in front of them — name,
+ID number, status. Vouchers whose `party_type` isn't `Beneficiary` (walk-ins,
+merchant vouchers) contribute nothing here.
 
 Voucher `image` is the QR the backend generates on save (nppos
 `entitlement_voucher.py`): a public, site-relative file url

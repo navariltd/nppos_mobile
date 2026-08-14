@@ -89,16 +89,20 @@ erDiagram
 |---|---|---|
 | `assignments` (ADA) | pulled | agent's own slice; `project`/`disbursement_order` are plain name strings, `amount_to_disburse`. The only grouping that reaches the device |
 | `vouchers` | pulled + counted locally | voucher no (unique = doc name on backend). **Entitlement folded inline**: `entitlement_type` cash\|hamper, `amount` (cash) or `hamper_id`/`qty`/`uom`/`rate` (goods), plus `redeemed_amount`/`redeemed_qty` running totals for partial redemption. validity from/to, status, `uses_count` (max 2), `project` string, `assignment_id` |
-| `hampers`, `hamper_items` | pulled | BOM + components (item, unit, qty/household) |
+| `hampers`, `hamper_items` | pulled | the finished item + its default-BOM expansion (item, unit, qty/household). Fallback contents for vouchers with no `bom_id` |
+| `boms`, `bom_items` | pulled | ERPNext BOM + BOM Item — the authoritative hamper contents. A goods voucher names its own BOM (`vouchers.bom_id`), which is not always the item's default; `agent_stock.bom_id` is the default one, i.e. what a unit in the warehouse holds. Both feed the contents popup (`HamperContentsDialog`) |
+| `beneficiaries` | pulled | the parties behind the agent's vouchers — name, ID number, status, household size. Identity confirmation at issue time only, never the case file. Walk-in vouchers have no row |
 | `agent_stock` | pulled + decremented locally | agent-warehouse levels per finished item |
 | `voucher_redemptions` | local-first | one row per voucher use → backend Entitlement Redemption; links straight to the voucher, carries type/amount/qty |
 | `pos_transactions` | local-first | uuid PK, type (`goods_issue` \| `cash_payment` \| `stock_return`), refs (voucher no, `project` string, `assignment_id`), amount/qty, status: `pending` → `synced` \| `conflict`, created_at, synced_at |
-| `pos_profiles`, `pos_sessions` | pulled / local | POS Profile + shift (Opening/Closing Entry) |
+| `pos_profiles`, `pos_sessions` | pulled / local | POS Profile + shift (Opening/Closing Entry). A session row only survives if its POS Opening Entry reached the server — `openPosSession` pushes immediately and `discardUnsyncedPosSession` rolls it back otherwise, so `opening_server_name` is set for every open shift. `closing_photo_uri` keeps the local copy of the optional close-out photo attached to the closing entry |
 | `outbox` | local | uuid, payload JSON, attempt count, next_retry_at, last_error |
 | `sync_meta` | local | per-collection cursors/timestamps for delta pulls |
 
 Dropped in the voucher-centric refactor: `projects`, `disbursement_orders`,
-`beneficiaries`, `entitlements` (the erDiagram above is historical).
+`entitlements` (the erDiagram above is historical). `beneficiaries` came back in
+a much smaller form — identity fields for the vouchers on the device, nothing
+more.
 
 ## 4. Sync engine (outbox pattern)
 
