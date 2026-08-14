@@ -10,7 +10,12 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { useCurrency } from '@/hooks/currency';
-import { findVoucherByNo, useVoucherSearchByNo, useVouchersByBeneficiaryNo } from '@/repositories';
+import {
+	findVoucherByNo,
+	useBeneficiaryNames,
+	useVoucherSearchByNo,
+	useVouchersByBeneficiaryNo,
+} from '@/repositories';
 import { useRouter } from 'expo-router';
 import { ScanLine, Search, SearchX, Ticket } from 'lucide-react-native';
 import * as React from 'react';
@@ -36,6 +41,10 @@ export default function VoucherSearch() {
 		submitted?.mode === 'beneficiary' ? submitted.q : undefined,
 	);
 	const searched = submitted !== null;
+	// Beneficiary-number results are already filtered to what's still redeemable
+	// (useVouchersByBeneficiaryNo). An exact voucher-number lookup is NOT: the
+	// agent typed/scanned that exact voucher, so a spent one is shown greyed with
+	// its status rather than silently reported as "no match".
 	const results = !submitted
 		? []
 		: submitted.mode === 'voucher'
@@ -43,6 +52,10 @@ export default function VoucherSearch() {
 				? [single]
 				: []
 			: many;
+	const names = useBeneficiaryNames(results.map((v) => v.beneficiaryNo));
+
+	const isRedeemable = (status: string) =>
+		status === 'active' || status === 'partially_redeemed';
 
 	const runSearch = () => setSubmitted({ mode, q });
 
@@ -82,7 +95,7 @@ export default function VoucherSearch() {
 			<Text className="text-muted-foreground text-sm">
 				{mode === 'voucher'
 					? 'Exact-match by voucher number — or scan the voucher QR.'
-					: 'Lists all active vouchers for a beneficiary number.'}
+					: 'Lists the beneficiary’s vouchers that can still be redeemed.'}
 			</Text>
 
 			<View className="flex-row gap-2">
@@ -124,28 +137,49 @@ export default function VoucherSearch() {
 						subtitle="Scan the voucher QR, or type a voucher/beneficiary number"
 					/>
 				) : results.length === 0 ? (
-					<EmptyState icon={SearchX} title="No match" subtitle="Check the number and try again" />
+					<EmptyState
+						icon={SearchX}
+						title="No match"
+						subtitle={
+							submitted.mode === 'beneficiary'
+								? 'No redeemable vouchers for this beneficiary number'
+								: 'Check the number and try again'
+						}
+					/>
 				) : (
 					<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-2">
-						{results.map((v, i) => (
-							<Animated.View
-								key={v.id}
-								entering={FadeInDown.duration(280).delay(Math.min(i * 60, 360))}
-							>
-								{i > 0 && <Separator />}
-								<ListRow
-									title={v.voucherNo}
-									subtitle={`${v.entitlementType === 'cash' ? format(v.amount) : 'Hamper'} · ${v.usesCount}/${v.maxUses} uses`}
-									onPress={() => router.push(`/vouchers/${v.voucherNo}`)}
-									leading={
-										<View className="bg-primary/10 h-10 w-10 items-center justify-center rounded-xl">
-											<Icon as={Ticket} size={18} className="text-primary" />
-										</View>
-									}
-									right={<VoucherStatusBadge status={v.status} />}
-								/>
-							</Animated.View>
-						))}
+						{results.map((v, i) => {
+							const spent = !isRedeemable(v.status);
+							const who = v.beneficiaryNo ? (names[v.beneficiaryNo] ?? v.beneficiaryNo) : null;
+							return (
+								<Animated.View
+									key={v.id}
+									entering={FadeInDown.duration(280).delay(Math.min(i * 60, 360))}
+								>
+									{i > 0 && <Separator />}
+									<ListRow
+										title={v.voucherNo}
+										subtitle={[
+											who,
+											v.entitlementType === 'cash' ? format(v.amount) : 'Hamper',
+											`${v.usesCount}/${v.maxUses} uses`,
+										]
+											.filter(Boolean)
+											.join(' · ')}
+										onPress={() => router.push(`/vouchers/${v.voucherNo}`)}
+										// A spent/expired voucher still opens (the detail screen
+										// explains why it can't be issued) but reads as inactive.
+										className={spent ? 'opacity-55' : undefined}
+										leading={
+											<View className="bg-primary/10 h-10 w-10 items-center justify-center rounded-xl">
+												<Icon as={Ticket} size={18} className="text-primary" />
+											</View>
+										}
+										right={<VoucherStatusBadge status={v.status} />}
+									/>
+								</Animated.View>
+							);
+						})}
 					</ScrollView>
 				)}
 			</Card>

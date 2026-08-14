@@ -104,15 +104,19 @@ export class MockAdapter implements ApiAdapter {
 		return {
 			assignments: [],
 			vouchers: [],
+			boms: [],
 			hampers: [],
 			agentStock: [],
 			posProfiles: [],
+			beneficiaries: [],
 			cursors: {
 				assignments: now,
 				vouchers: now,
+				boms: now,
 				hampers: now,
 				agentStock: now,
 				posProfiles: now,
+				beneficiaries: now,
 			},
 		};
 	}

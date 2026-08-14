@@ -43,6 +43,13 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "NPPOS attaches a photo of the signed distribution sheet to the shift's closing entry.",
+          "cameraPermission": "NPPOS uses the camera to capture the signed distribution sheet when closing a shift."
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash-icon.png",

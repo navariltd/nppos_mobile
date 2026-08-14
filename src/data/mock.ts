@@ -8,6 +8,8 @@ import type {
 	Agent,
 	AgentStockRow,
 	Assignment,
+	Beneficiary,
+	Bom,
 	Hamper,
 	PosProfile,
 	PosTransaction,
@@ -55,10 +57,43 @@ export const assignments: Assignment[] = [
 	},
 ];
 
+// What a hamper contains (backend: BOM + BOM Item). A goods voucher names its
+// own BOM, so BOM-A-JUN is what the agent hands over for VCH-4 even though the
+// item HMP-A also has a default BOM.
+export const boms: Bom[] = [
+	{
+		id: 'BOM-HMP-A-001',
+		itemCode: 'HMP-A',
+		itemName: 'Food Basket A',
+		quantity: 1,
+		uom: 'Nos',
+		items: [
+			{ itemCode: 'RICE', itemName: 'Rice', unit: 'kg', qty: 10 },
+			{ itemCode: 'OIL', itemName: 'Cooking Oil', unit: 'L', qty: 3 },
+			{ itemCode: 'BEANS', itemName: 'Beans', unit: 'kg', qty: 5 },
+			{ itemCode: 'SALT', itemName: 'Salt', unit: 'kg', qty: 1 },
+			{ itemCode: 'FLOUR', itemName: 'Maize Flour', unit: 'kg', qty: 12 },
+		],
+	},
+	{
+		id: 'BOM-HMP-B-001',
+		itemCode: 'HMP-B',
+		itemName: 'Hygiene Basket B',
+		quantity: 1,
+		uom: 'Nos',
+		items: [
+			{ itemCode: 'SOAP', itemName: 'Soap', unit: 'bars', qty: 6 },
+			{ itemCode: 'PADS', itemName: 'Sanitary Pads', unit: 'packs', qty: 4 },
+			{ itemCode: 'PASTE', itemName: 'Toothpaste', unit: 'tubes', qty: 2 },
+		],
+	},
+];
+
 export const hampers: Hamper[] = [
 	{
 		id: 'HMP-A',
 		name: 'Project 1-Jun-2026-Food Basket A',
+		bomId: 'BOM-HMP-A-001',
 		items: [
 			{ itemName: 'Rice', unit: 'kg', qtyPerHousehold: 10 },
 			{ itemName: 'Cooking Oil', unit: 'L', qtyPerHousehold: 3 },
@@ -70,6 +105,7 @@ export const hampers: Hamper[] = [
 	{
 		id: 'HMP-B',
 		name: 'Project 1-Jun-2026-Hygiene Basket B',
+		bomId: 'BOM-HMP-B-001',
 		items: [
 			{ itemName: 'Soap', unit: 'bars', qtyPerHousehold: 6 },
 			{ itemName: 'Sanitary Pads', unit: 'packs', qtyPerHousehold: 4 },
@@ -79,6 +115,41 @@ export const hampers: Hamper[] = [
 ];
 
 const PROJECT = 'HDR Jun 2026 — Food & Cash';
+
+// The people behind the vouchers — what an agent needs to confirm identity at
+// the distribution point (backend: Beneficiary in aigt_hdr).
+export const beneficiaries: Beneficiary[] = [
+	{
+		id: 'B-9001',
+		fullName: 'Fatima Ahmed Osman',
+		idNumber: '29874112',
+		status: 'Active',
+		phone: '+249 91 234 5678',
+		householdSize: 6,
+		beneficiaryType: 'Household',
+		district: 'Kibra',
+	},
+	{
+		id: 'B-9042',
+		fullName: 'Joseph Kamau Njoroge',
+		idNumber: '31220984',
+		status: 'Active',
+		phone: '+249 92 887 1120',
+		householdSize: 4,
+		beneficiaryType: 'Household',
+		district: 'Kibra',
+	},
+	{
+		id: 'B-9077',
+		fullName: 'Amal Ibrahim Hassan',
+		idNumber: '27551903',
+		status: 'Under Review',
+		phone: '+249 90 445 7781',
+		householdSize: 8,
+		beneficiaryType: 'Household',
+		district: 'Kibra',
+	},
+];
 
 // Each voucher carries ONE entitlement inline — a cash amount OR a hamper qty —
 // mirroring the backend's Entitlement Voucher (Goods|Cash).
@@ -142,6 +213,7 @@ export const vouchers: Voucher[] = [
 		entitlementType: 'hamper',
 		amount: 0,
 		hamperId: 'HMP-A',
+		bomId: 'BOM-HMP-A-001',
 		qty: 2,
 		uom: 'Nos',
 		rate: 0,
@@ -159,11 +231,11 @@ export const vouchers: Voucher[] = [
 
 export const agentStock: AgentStockRow[] = [
 	// Kibra Field POS warehouse
-	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-A', hamperName: 'Food Basket A', onHand: 73, issuedToday: 47, damaged: 2 },
-	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-B', hamperName: 'Hygiene Basket B', onHand: 40, issuedToday: 8, damaged: 0 },
+	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-A', hamperName: 'Food Basket A', bomId: 'BOM-HMP-A-001', onHand: 73, issuedToday: 47, damaged: 2 },
+	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-B', hamperName: 'Hygiene Basket B', bomId: 'BOM-HMP-B-001', onHand: 40, issuedToday: 8, damaged: 0 },
 	// Kibra Outreach POS warehouse — deliberately different so switching
 	// profiles visibly switches the stock view.
-	{ warehouse: 'WH-NRB-OUT-01', hamperId: 'HMP-A', hamperName: 'Food Basket A', onHand: 18, issuedToday: 3, damaged: 0 },
+	{ warehouse: 'WH-NRB-OUT-01', hamperId: 'HMP-A', hamperName: 'Food Basket A', bomId: 'BOM-HMP-A-001', onHand: 18, issuedToday: 3, damaged: 0 },
 ];
 
 export const transactions: PosTransaction[] = [

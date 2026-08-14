@@ -20,6 +20,13 @@ import { Text } from '@/components/ui/text';
 import { Input } from '@/components/ui/input';
 import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
+import {
+	capturePhotoFromCamera,
+	pickPhotoFromLibrary,
+	PHOTO_TOO_LARGE,
+	type CapturedPhoto,
+	type CaptureResult,
+} from '@/lib/close-out-photo';
 import { formatTime } from '@/lib/format';
 import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
 import {
@@ -32,9 +39,16 @@ import {
 } from '@/repositories';
 import { useAppDispatch } from '@/store/hooks';
 import { useRouter } from 'expo-router';
-import { ClipboardCheck, CloudOff, TriangleAlert } from 'lucide-react-native';
+import {
+	Camera,
+	ClipboardCheck,
+	CloudOff,
+	ImageIcon,
+	TriangleAlert,
+	X,
+} from 'lucide-react-native';
 import * as React from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Image, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 export default function Reconciliation() {
@@ -50,8 +64,22 @@ export default function Reconciliation() {
 	const preflight = useShiftPreflight();
 	const { format, symbol } = useCurrency();
 	const [counted, setCounted] = React.useState('');
+	const [photo, setPhoto] = React.useState<CapturedPhoto | null>(null);
 
 	const expectedCash = session ? session.openingFloat - sessionCash : 0;
+
+	const attach = async (capture: () => Promise<CaptureResult>) => {
+		const result = await capture();
+		if (result.denied) {
+			Alert.alert('Permission needed', 'Allow access to attach a close-out photo.');
+			return;
+		}
+		if (result.tooLarge) {
+			Alert.alert('Photo not attached', PHOTO_TOO_LARGE);
+			return;
+		}
+		if (result.photo) setPhoto(result.photo);
+	};
 
 	// Closing is the reconcile moment, and it is ONLINE-ONLY: every transaction
 	// the closing entry accounts for must already be on the server, otherwise
@@ -66,7 +94,7 @@ export default function Reconciliation() {
 			return;
 		}
 
-		const result = closePosSession(Number(counted) || 0);
+		const result = closePosSession(Number(counted) || 0, photo ?? undefined);
 		if (!result.ok) {
 			Alert.alert('Could not close', result.reason);
 			return;
@@ -190,6 +218,68 @@ export default function Reconciliation() {
 								<View className="flex-row justify-between">
 									<Text className="font-medium">Expected cash in hand</Text>
 									<Text className="font-display-semibold">{format(expectedCash)}</Text>
+								</View>
+							</CardContent>
+						</Card>
+					</Animated.View>
+
+					{/* Proof of distribution — optional. Some points collect a signed
+					    sheet or fingerprints; photographing it here attaches it to the
+					    POS Closing Entry so the paper record and the ledger match. */}
+					<SectionLabel>Close-out photo (optional)</SectionLabel>
+					<Animated.View entering={FadeInDown.duration(300).delay(200)}>
+						<Card>
+							<CardContent className="gap-3 pt-5">
+								{photo ? (
+									<View className="flex-row items-center gap-3">
+										<Image
+											source={{ uri: photo.uri }}
+											style={{ width: 64, height: 64 }}
+											resizeMode="cover"
+											className="bg-muted rounded-xl"
+											accessibilityLabel="Attached close-out photo"
+										/>
+										<View className="flex-1">
+											<Text className="text-sm font-medium" numberOfLines={1}>
+												{photo.name}
+											</Text>
+											<Text className="text-muted-foreground text-xs">
+												Attaches to the closing entry
+											</Text>
+										</View>
+										<Button
+											variant="ghost"
+											size="icon"
+											accessibilityLabel="Remove close-out photo"
+											onPress={() => setPhoto(null)}
+										>
+											<Icon as={X} size={18} className="text-muted-foreground" />
+										</Button>
+									</View>
+								) : (
+									<Text className="text-muted-foreground text-sm">
+										Attach the signed sheet or fingerprint slip taken at this point.
+									</Text>
+								)}
+								<View className="flex-row gap-2">
+									<Button
+										variant="outline"
+										size="sm"
+										className="flex-1"
+										onPress={() => attach(capturePhotoFromCamera)}
+									>
+										<Icon as={Camera} size={16} className="text-foreground" />
+										<Text>{photo ? 'Retake' : 'Take photo'}</Text>
+									</Button>
+									<Button
+										variant="outline"
+										size="sm"
+										className="flex-1"
+										onPress={() => attach(pickPhotoFromLibrary)}
+									>
+										<Icon as={ImageIcon} size={16} className="text-foreground" />
+										<Text>Choose file</Text>
+									</Button>
 								</View>
 							</CardContent>
 						</Card>

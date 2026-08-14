@@ -9,6 +9,8 @@ import type {
 	Agent,
 	AgentStockRow,
 	Assignment,
+	Beneficiary,
+	Bom,
 	Hamper,
 	PosProfile,
 	Voucher,
@@ -72,7 +74,14 @@ export type OutboxPayload =
 			countedCash: number;
 			difference: number;
 			autoClosed: boolean;
+			photo?: ClosingPhoto;
 	  };
+
+export interface ClosingPhoto {
+	name: string;
+	mime: string;
+	data: string; // base64
+}
 
 export interface PushItem {
 	// Client UUID — doubles as the idempotency key (`custom_client_ref`).
@@ -125,16 +134,20 @@ export type PullCursors = Partial<Record<PullCollection, string>>;
 export type PullCollection =
 	| 'assignments'
 	| 'vouchers'
+	| 'boms'
 	| 'hampers'
 	| 'agentStock'
-	| 'posProfiles';
+	| 'posProfiles'
+	| 'beneficiaries';
 
 export interface PullResponse {
 	assignments: Assignment[];
 	vouchers: Voucher[]; // entitlement folded inline (Cash|Goods)
+	boms: Bom[]; // hamper contents, components inline
 	hampers: Hamper[]; // items inline, like the domain type
 	agentStock: AgentStockRow[];
 	posProfiles: PosProfile[];
+	beneficiaries: Beneficiary[]; // only the parties on the agent's vouchers
 	// New cursor per collection, persisted to sync_meta after upsert.
 	cursors: Record<PullCollection, string>;
 }

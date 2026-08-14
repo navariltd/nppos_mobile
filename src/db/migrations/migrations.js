@@ -8,6 +8,8 @@ import m0004 from './20260721121029_agent_stock_per_warehouse/migration.sql';
 import m0005 from './20260721124103_transaction_conflict_reason/migration.sql';
 import m0006 from './20260724034008_nppos_voucher_centric_model/migration.sql';
 import m0007 from './20260806154357_voucher_qr_image/migration.sql';
+import m0008 from './20260813121613_voucher_bom_and_beneficiary/migration.sql';
+import m0009 from './20260814050822_redemption_pos_opening_entry/migration.sql';
 
   export default {
     migrations: {
@@ -18,7 +20,9 @@ import m0007 from './20260806154357_voucher_qr_image/migration.sql';
 "20260721121029_agent_stock_per_warehouse": m0004,
 "20260721124103_transaction_conflict_reason": m0005,
 "20260724034008_nppos_voucher_centric_model": m0006,
-"20260806154357_voucher_qr_image": m0007
+"20260806154357_voucher_qr_image": m0007,
+"20260813121613_voucher_bom_and_beneficiary": m0008,
+"20260814050822_redemption_pos_opening_entry": m0009
 }
   }
   

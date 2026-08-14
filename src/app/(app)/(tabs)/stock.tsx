@@ -1,3 +1,4 @@
+import { HamperContentsDialog } from '@/components/domain/HamperContentsDialog';
 import { Screen } from '@/components/domain/Screen';
 import { FadeInView, Stat } from '@/components/domain/widgets';
 import {
@@ -20,9 +21,9 @@ import { Text } from '@/components/ui/text';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { reportDamagedStock, returnStock, useAgentStock } from '@/repositories';
 import type { AgentStockRow } from '@/types/domain';
-import { TriangleAlert, Undo2 } from 'lucide-react-native';
+import { ChevronRight, PackageOpen, TriangleAlert, Undo2 } from 'lucide-react-native';
 import * as React from 'react';
-import { Alert, View } from 'react-native';
+import { Alert, Pressable, View } from 'react-native';
 
 type Adjust = { row: AgentStockRow; kind: 'return' | 'damaged' };
 
@@ -31,6 +32,7 @@ export default function Stock() {
 	const agentStock = useAgentStock(profile?.warehouse);
 	const [adjust, setAdjust] = React.useState<Adjust | null>(null);
 	const [qty, setQty] = React.useState('1');
+	const [contentsOf, setContentsOf] = React.useState<AgentStockRow | null>(null);
 
 	const totalOnHand = agentStock.reduce((s, r) => s + r.onHand, 0);
 	const totalIssued = agentStock.reduce((s, r) => s + r.issuedToday, 0);
@@ -91,16 +93,30 @@ export default function Stock() {
 			{agentStock.map((row, i) => (
 				<FadeInView key={row.hamperId} delay={80 + i * 70}>
 					<Card>
-						<CardHeader>
-							<View className="flex-row items-center justify-between gap-2">
-								<CardTitle className="flex-1" numberOfLines={2}>
-									{row.hamperName}
-								</CardTitle>
-								<Badge variant="secondary">
-									<Text>{row.hamperId}</Text>
-								</Badge>
-							</View>
-						</CardHeader>
+						{/* Tapping a stock line shows what one unit contains (its default
+						    BOM) — the same list the agent sees when redeeming. */}
+						<Pressable
+							onPress={() => setContentsOf(row)}
+							accessibilityRole="button"
+							accessibilityLabel={`Show contents of ${row.hamperName}`}
+							className="active:bg-accent/40 rounded-t-xl"
+						>
+							<CardHeader>
+								<View className="flex-row items-center justify-between gap-2">
+									<CardTitle className="flex-1" numberOfLines={2}>
+										{row.hamperName}
+									</CardTitle>
+									<Badge variant="secondary">
+										<Text>{row.hamperId}</Text>
+									</Badge>
+								</View>
+								<View className="mt-1 flex-row items-center gap-1.5">
+									<Icon as={PackageOpen} size={13} className="text-primary" />
+									<Text className="text-primary flex-1 text-xs">What's in this hamper</Text>
+									<Icon as={ChevronRight} size={14} className="text-muted-foreground" />
+								</View>
+							</CardHeader>
+						</Pressable>
 						<CardContent className="gap-3">
 							<View className="flex-row">
 								<Stat label="On hand" value={String(row.onHand)} />
@@ -132,6 +148,14 @@ export default function Stock() {
 					</Card>
 				</FadeInView>
 			))}
+
+			<HamperContentsDialog
+				open={contentsOf !== null}
+				onOpenChange={(o) => !o && setContentsOf(null)}
+				title={contentsOf?.hamperName ?? ''}
+				bomId={contentsOf?.bomId}
+				hamperId={contentsOf?.hamperId}
+			/>
 
 			<AlertDialog open={adjust !== null} onOpenChange={(o) => !o && setAdjust(null)}>
 				<AlertDialogContent>

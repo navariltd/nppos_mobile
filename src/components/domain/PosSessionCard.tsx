@@ -27,6 +27,7 @@ import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { formatTime } from '@/lib/format';
 import {
+	discardUnsyncedPosSession,
 	openPosSession,
 	posSessionServerName,
 	useOpenPosSession,
@@ -77,10 +78,14 @@ export function PosSessionCard() {
 		} catch {
 			// fall through to the server-name check below
 		}
+		// No entry on the server = no shift. Roll the local session back rather
+		// than run a shift whose redemptions can't be attributed to a POS Opening
+		// Entry — they'd never appear on its closing entry.
 		if (!posSessionServerName(result.transactionId)) {
+			discardUnsyncedPosSession(result.transactionId);
 			Alert.alert(
-				'Session opened, but not on the server',
-				'The POS Opening Entry has not been accepted yet. It will retry automatically — close and reopen the shift if this keeps happening.',
+				'Session not opened',
+				'The POS Opening Entry did not reach the server, so the shift was not started. Check your connection and try again.',
 			);
 		}
 	};
@@ -90,12 +95,19 @@ export function PosSessionCard() {
 			<Card className="border-success/40">
 				<CardContent className="flex-row items-center gap-3 py-4">
 					<View className="bg-success/10 h-10 w-10 items-center justify-center rounded-xl">
-						<Icon as={PlayCircle} size={18} className="text-success" />
+						<Icon
+							as={PlayCircle}
+							size={18}
+							className="text-success"
+						/>
 					</View>
 					<View className="flex-1">
-						<Text className="font-medium">Session open · since {formatTime(session.openedAt)}</Text>
+						<Text className="font-medium">
+							Session open · since {formatTime(session.openedAt)}
+						</Text>
 						<Text className="text-muted-foreground text-xs">
-							Float {format(session.openingFloat)} · paid out {format(cashPaid)}
+							Float {format(session.openingFloat)} · paid out{' '}
+							{format(cashPaid)}
 						</Text>
 					</View>
 					<Button
@@ -103,7 +115,11 @@ export function PosSessionCard() {
 						size="sm"
 						onPress={() => router.push('/reconciliation')}
 					>
-						<Icon as={StopCircle} size={15} className="text-destructive" />
+						<Icon
+							as={StopCircle}
+							size={15}
+							className="text-destructive"
+						/>
 						<Text>Close</Text>
 					</Button>
 				</CardContent>
@@ -116,7 +132,11 @@ export function PosSessionCard() {
 			<Card className="border-warning/40 bg-warning/5">
 				<CardContent className="flex-row items-center gap-3 py-4">
 					<View className="bg-warning/15 h-10 w-10 items-center justify-center rounded-xl">
-						<Icon as={StopCircle} size={18} className="text-warning" />
+						<Icon
+							as={StopCircle}
+							size={18}
+							className="text-warning"
+						/>
 					</View>
 					<View className="flex-1">
 						<Text className="font-medium">No open POS session</Text>
@@ -148,13 +168,16 @@ export function PosSessionCard() {
 					<AlertDialogHeader>
 						<AlertDialogTitle>Open POS session</AlertDialogTitle>
 						<AlertDialogDescription>
-							Count the cash float you are starting the shift with. Opening syncs first —
-							anything still queued is sent and today's vouchers and stock are pulled — then
-							submits the POS Opening Entry.
+							Count the cash float you are starting the shift
+							with. Opening syncs first — anything still queued is
+							sent and today's vouchers and stock are pulled —
+							then submits the POS Opening Entry.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<View className="gap-1.5">
-						<Text className="text-muted-foreground text-xs">Opening cash float ({symbol})</Text>
+						<Text className="text-muted-foreground text-xs">
+							Opening cash float ({symbol})
+						</Text>
 						<Input
 							value={float}
 							onChangeText={setFloat}

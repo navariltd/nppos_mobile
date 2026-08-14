@@ -6,6 +6,9 @@ import { db } from '@/db/client';
 import {
 	agentStock,
 	assignments,
+	beneficiaries,
+	bomItems,
+	boms,
 	hamperItems,
 	hampers,
 	outbox,
@@ -81,11 +84,14 @@ export function resetLocalData(): void {
 		tx.delete(posTransactions).run();
 		tx.delete(outbox).run();
 		tx.delete(hamperItems).run();
+		tx.delete(bomItems).run();
 		tx.delete(agentStock).run();
 		tx.delete(posSessions).run();
 		tx.delete(vouchers).run();
 		tx.delete(assignments).run();
 		tx.delete(hampers).run();
+		tx.delete(boms).run();
+		tx.delete(beneficiaries).run();
 		tx.delete(posProfiles).run();
 		tx.delete(syncMeta).run();
 	});
@@ -99,12 +105,18 @@ export function pendingOutboxCount(): number {
 	return db.select({ id: outbox.id }).from(outbox).all().length;
 }
 
-// Session references are stored as the LOCAL session id (that's all a mutation
-// knows) but must leave the device as the POS Opening Entry's server name — the
-// backend resolves them as document names. Shifts are opened online and pushed
-// immediately, so the name is always there by the time anything references it;
-// if it somehow isn't, the local id goes out unchanged and the server rejects
-// it rather than guessing.
+// Session references must leave the device as the POS Opening Entry's server
+// name — the backend resolves them as document names.
+//
+// Redemptions already carry it: a shift only exists once its opening entry is on
+// the server (openPosSession rolls back otherwise), so mutations stamp the name
+// straight into the payload. Those pass through here untouched — the lookup is
+// by local session id, which a server name never matches. This still runs for
+// them to cover rows queued by an older build, and it is load-bearing for
+// pos_closing, which references the shift by its local id.
+//
+// If a lookup finds nothing the local id goes out unchanged and the server
+// rejects it rather than guessing.
 function serverSessionName(localId: string): string | undefined {
 	const row = db
 		.select({ serverName: posSessions.openingServerName })
@@ -251,6 +263,7 @@ export function applyPull(pull: PullResponse): number {
 				entitlementType: v.entitlementType,
 				amount: v.amount,
 				hamperId: v.hamperId ?? null,
+				bomId: v.bomId ?? null,
 				qty: v.qty ?? null,
 				uom: v.uom ?? null,
 				rate: v.rate ?? null,
@@ -271,6 +284,41 @@ export function applyPull(pull: PullResponse): number {
 				.run();
 			upserts++;
 		}
+		for (const b of pull.boms) {
+			const row = {
+				id: b.id,
+				itemCode: b.itemCode,
+				itemName: b.itemName,
+				quantity: b.quantity,
+				uom: b.uom ?? null,
+			};
+			tx.insert(boms).values(row).onConflictDoUpdate({ target: boms.id, set: row }).run();
+			// Components are replaced wholesale — they have no local edits.
+			tx.delete(bomItems).where(eq(bomItems.bomId, b.id)).run();
+			if (b.items.length > 0) {
+				tx.insert(bomItems)
+					.values(b.items.map((i) => ({ bomId: b.id, ...i })))
+					.run();
+			}
+			upserts++;
+		}
+		for (const b of pull.beneficiaries) {
+			const row = {
+				id: b.id,
+				fullName: b.fullName,
+				idNumber: b.idNumber ?? null,
+				status: b.status ?? null,
+				phone: b.phone ?? null,
+				householdSize: b.householdSize,
+				beneficiaryType: b.beneficiaryType ?? null,
+				district: b.district ?? null,
+			};
+			tx.insert(beneficiaries)
+				.values(row)
+				.onConflictDoUpdate({ target: beneficiaries.id, set: row })
+				.run();
+			upserts++;
+		}
 		for (const h of pull.hampers) {
 			tx.insert(hampers)
 				.values({ id: h.id, name: h.name })
@@ -287,11 +335,12 @@ export function applyPull(pull: PullResponse): number {
 		}
 		for (const s of pull.agentStock) {
 			tx.insert(agentStock)
-				.values(s)
+				.values({ ...s, bomId: s.bomId ?? null })
 				.onConflictDoUpdate({
 					target: [agentStock.warehouse, agentStock.hamperId],
 					set: {
 						hamperName: s.hamperName,
+						bomId: s.bomId ?? null,
 						onHand: s.onHand,
 						issuedToday: s.issuedToday,
 						damaged: s.damaged,

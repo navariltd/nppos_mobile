@@ -21,6 +21,7 @@ import {
 	vouchers,
 } from '@/db/schema';
 import { uuid } from '@/lib/uuid';
+import type { ClosingPhoto } from '@/services/api';
 import { and, eq, sql } from 'drizzle-orm';
 
 export type MutationResult = { ok: true; transactionId: string } | { ok: false; reason: string };
@@ -35,6 +36,35 @@ function today(): string {
 
 function getOpenSession() {
 	return db.select().from(posSessions).where(eq(posSessions.status, 'open')).get();
+}
+
+// The open shift plus the POS Opening Entry name every redemption in it is
+// stamped with. That name is the backend's shift key: the POS Closing Entry
+// autofills its Linked Redemptions from submitted redemptions sharing it, so a
+// redemption without it never appears on the shift it belongs to.
+//
+// A local shift never outlives a failed opening push — openPosSession is rolled
+// back when the POS Opening Entry doesn't reach the server (AGENTS.md rule 2,
+// shift boundaries are online-only) — so an open session always has its name.
+// The second check is a belt on that invariant, not an expected path: refusing
+// to redeem is right when we can't say which shift the redemption belongs to.
+function requireOpenSession():
+	| { error: string; session?: never; openingEntry?: never }
+	| {
+			error?: undefined;
+			session: typeof posSessions.$inferSelect;
+			openingEntry: string;
+	  } {
+	const session = getOpenSession();
+	if (!session) {
+		return { error: 'No open POS session — open one from the dashboard first.' };
+	}
+	if (!session.openingServerName) {
+		return {
+			error: 'This shift never reached the server. Close it and reopen while online.',
+		};
+	}
+	return { session, openingEntry: session.openingServerName };
 }
 
 type VoucherContext =
@@ -100,10 +130,9 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 		return { ok: false, reason: `Amount exceeds the ${remaining} remaining on this voucher.` };
 	}
 
-	const session = getOpenSession();
-	if (!session) {
-		return { ok: false, reason: 'No open POS session — open one from the dashboard first.' };
-	}
+	const shift = requireOpenSession();
+	if (shift.error !== undefined) return { ok: false, reason: shift.error };
+	const { session, openingEntry } = shift;
 
 	const fullyDrawn = voucher.redeemedAmount + amount >= voucher.amount;
 	const id = uuid();
@@ -130,6 +159,7 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 				voucherId: voucher.id,
 				transactionId: id,
 				posSessionId: session.id,
+				posOpeningEntry: openingEntry,
 				type: 'cash',
 				amount,
 				redeemedAt: nowIso(),
@@ -152,7 +182,7 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 					kind: 'cash_payment',
 					voucherNo: voucher.voucherNo,
 					amount,
-					posSession: session.id,
+					posSession: openingEntry,
 				}),
 				createdAt: nowIso(),
 			})
@@ -178,10 +208,9 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 		return { ok: false, reason: `Quantity exceeds the ${remaining} remaining on this voucher.` };
 	}
 
-	const session = getOpenSession();
-	if (!session) {
-		return { ok: false, reason: 'No open POS session — open one from the dashboard first.' };
-	}
+	const shift = requireOpenSession();
+	if (shift.error !== undefined) return { ok: false, reason: shift.error };
+	const { session, openingEntry } = shift;
 
 	// Goods draw from the session profile's warehouse (stock is per warehouse).
 	const profile = db
@@ -239,6 +268,7 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 				voucherId: voucher.id,
 				transactionId: id,
 				posSessionId: session.id,
+				posOpeningEntry: openingEntry,
 				type: 'hamper',
 				qty,
 				redeemedAt: nowIso(),
@@ -263,7 +293,7 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 					hamper: voucher.hamperId,
 					qty,
 					warehouse: profile.warehouse, // Stock Entry source warehouse
-					posSession: session.id,
+					posSession: openingEntry,
 				}),
 				createdAt: nowIso(),
 			})
@@ -379,12 +409,57 @@ export function openPosSession(openingFloat: number, posProfileId: string): Muta
 	return { ok: true, transactionId: id };
 }
 
+// Undo an opening whose POS Opening Entry never reached the server, so a local
+// shift never exists without its backend counterpart. Everything recorded in a
+// shift is attributed to that entry (`pos_opening_entry` on each redemption,
+// which the closing entry groups by), so a shift the server doesn't know about
+// can only produce work nothing can account for — better to not start it.
+//
+// Only ever called immediately after a failed opening push. Refuses once the
+// entry exists or anything has been recorded, so it can't be turned into a way
+// to erase a real shift.
+//
+// A push that was applied but whose response was lost leaves an orphan opening
+// on the server; the next open sweeps it up (`_close_stale_openings` in
+// nppos/sync_handlers.py closes it with a proper closing entry).
+export function discardUnsyncedPosSession(sessionId: string): MutationResult {
+	const session = db.select().from(posSessions).where(eq(posSessions.id, sessionId)).get();
+	if (!session) return { ok: false, reason: 'Session not found.' };
+	if (session.openingServerName) {
+		return { ok: false, reason: 'This session is already on the server.' };
+	}
+	const recorded = db
+		.select({ id: posTransactions.id })
+		.from(posTransactions)
+		.where(eq(posTransactions.posSessionId, sessionId))
+		.limit(1)
+		.get();
+	if (recorded) {
+		return { ok: false, reason: 'This session already has recorded transactions.' };
+	}
+
+	db.transaction((tx) => {
+		// The opening's outbox row is keyed by the session id (written at open).
+		tx.delete(outbox).where(eq(outbox.id, sessionId)).run();
+		tx.delete(posSessions).where(eq(posSessions.id, sessionId)).run();
+	});
+	return { ok: true, transactionId: sessionId };
+}
+
 // End of shift. Expected cash = opening float − cash paid out this session
 // (a disbursement POS pays cash OUT). Syncs as a POS Closing Entry linked to
 // the opening. Omitting countedCash auto-closes at the expected amount — the
 // sign-out path uses this so a session is never left dangling; the payload is
 // flagged so the backend/admin can tell counted from assumed.
-export function closePosSession(countedCash?: number): MutationResult {
+//
+// `photo` is optional proof-of-distribution the agent captures at close (a
+// signed sheet or fingerprint slip). It rides in the outbox payload as base64
+// and the backend attaches it to the POS Closing Entry; the local file uri is
+// kept on the session row so the closed shift can still show what was sent.
+export function closePosSession(
+	countedCash?: number,
+	photo?: ClosingPhoto & { uri: string },
+): MutationResult {
 	const session = getOpenSession();
 	if (!session) return { ok: false, reason: 'No open session to close.' };
 	if (countedCash !== undefined && countedCash < 0) {
@@ -414,6 +489,7 @@ export function closePosSession(countedCash?: number): MutationResult {
 				closedAt: nowIso(),
 				expectedCash,
 				countedCash: counted,
+				closingPhotoUri: photo?.uri ?? null,
 			})
 			.where(eq(posSessions.id, session.id))
 			.run();
@@ -429,6 +505,9 @@ export function closePosSession(countedCash?: number): MutationResult {
 					countedCash: counted,
 					difference: counted - expectedCash,
 					autoClosed,
+					...(photo
+						? { photo: { name: photo.name, mime: photo.mime, data: photo.data } }
+						: {}),
 				}),
 				createdAt: nowIso(),
 			})

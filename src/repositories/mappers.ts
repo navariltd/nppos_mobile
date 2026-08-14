@@ -3,6 +3,7 @@
 
 import type {
 	assignments,
+	beneficiaries,
 	posSessions,
 	posTransactions,
 	voucherRedemptions,
@@ -10,6 +11,7 @@ import type {
 } from '@/db/schema';
 import type {
 	Assignment,
+	Beneficiary,
 	PosSession,
 	PosTransaction,
 	Voucher,
@@ -35,6 +37,7 @@ export function toVoucher(r: typeof vouchers.$inferSelect): Voucher {
 		entitlementType: r.entitlementType,
 		amount: r.amount,
 		hamperId: r.hamperId ?? undefined,
+		bomId: r.bomId ?? undefined,
 		qty: r.qty ?? undefined,
 		uom: r.uom ?? undefined,
 		rate: r.rate ?? undefined,
@@ -48,6 +51,19 @@ export function toVoucher(r: typeof vouchers.$inferSelect): Voucher {
 		project: r.project,
 		assignmentId: r.assignmentId ?? undefined,
 		image: r.image ?? undefined,
+	};
+}
+
+export function toBeneficiary(r: typeof beneficiaries.$inferSelect): Beneficiary {
+	return {
+		id: r.id,
+		fullName: r.fullName,
+		idNumber: r.idNumber ?? undefined,
+		status: r.status ?? undefined,
+		phone: r.phone ?? undefined,
+		householdSize: r.householdSize,
+		beneficiaryType: r.beneficiaryType ?? undefined,
+		district: r.district ?? undefined,
 	};
 }
 
@@ -81,6 +97,7 @@ export function toPosSession(r: typeof posSessions.$inferSelect): PosSession {
 		openingFloat: r.openingFloat,
 		expectedCash: r.expectedCash ?? undefined,
 		countedCash: r.countedCash ?? undefined,
+		closingPhotoUri: r.closingPhotoUri ?? undefined,
 	};
 }
 
@@ -91,6 +108,7 @@ export function toVoucherRedemption(
 		id: r.id,
 		voucherId: r.voucherId,
 		transactionId: r.transactionId,
+		posOpeningEntry: r.posOpeningEntry ?? undefined,
 		type: r.type,
 		amount: r.amount ?? undefined,
 		qty: r.qty ?? undefined,

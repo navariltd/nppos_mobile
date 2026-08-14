@@ -6,6 +6,9 @@ import { db } from '@/db/client';
 import {
 	agentStock,
 	assignments,
+	beneficiaries,
+	bomItems,
+	boms,
 	hamperItems,
 	hampers,
 	posProfiles,
@@ -17,7 +20,10 @@ import {
 import type {
 	AgentStockRow,
 	Assignment,
+	Beneficiary,
+	Bom,
 	Hamper,
+	HamperContents,
 	PosProfile,
 	PosSession,
 	PosTransaction,
@@ -25,13 +31,24 @@ import type {
 	Voucher,
 	VoucherRedemption,
 } from '@/types/domain';
-import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 
-import { toAssignment, toPosSession, toTransaction, toVoucher, toVoucherRedemption } from './mappers';
+import {
+	toAssignment,
+	toBeneficiary,
+	toPosSession,
+	toTransaction,
+	toVoucher,
+	toVoucherRedemption,
+} from './mappers';
 
 // Sentinel for "no id yet" params so hooks can run unconditionally.
 const NONE = '__none__';
+
+// The statuses an agent can still issue against (docs/NPPOS_WEB.md): a
+// partially redeemed voucher still has value left on it.
+const REDEEMABLE_STATUSES = ['active', 'partially_redeemed'] as const;
 
 // ---- assignments (ADA) ------------------------------------------------------
 
@@ -105,17 +122,112 @@ export function findVoucherByNo(voucherNo: string): Voucher | undefined {
 	return rows[0] ? toVoucher(rows[0]) : undefined;
 }
 
+// Searching a beneficiary number lists what the agent can still act on —
+// redeemed and expired vouchers are noise at a distribution point. (An exact
+// voucher-number lookup deliberately does NOT filter: the agent scanned that
+// specific voucher and needs to be told it's spent, not "no match".)
 export function useVouchersByBeneficiaryNo(beneficiaryNo?: string): Voucher[] {
 	const q = (beneficiaryNo ?? '').trim().toUpperCase();
 	const { data } = useLiveQuery(
 		db
 			.select()
 			.from(vouchers)
-			.where(q ? sql`upper(${vouchers.beneficiaryNo}) = ${q}` : sql`1 = 0`)
+			.where(
+				q
+					? and(
+							sql`upper(${vouchers.beneficiaryNo}) = ${q}`,
+							inArray(vouchers.status, REDEEMABLE_STATUSES),
+						)
+					: sql`1 = 0`,
+			)
 			.orderBy(desc(vouchers.voucherNo)),
 		[q],
 	);
 	return (data ?? []).map(toVoucher);
+}
+
+// ---- beneficiaries -------------------------------------------------------------
+
+// The person a voucher belongs to — name/ID/status, shown at issue time so the
+// agent can confirm who they're facing. Walk-in vouchers have no row.
+export function useBeneficiary(beneficiaryNo?: string): Beneficiary | undefined {
+	const { data } = useLiveQuery(
+		db.select().from(beneficiaries).where(eq(beneficiaries.id, beneficiaryNo ?? NONE)),
+		[beneficiaryNo],
+	);
+	return data?.[0] ? toBeneficiary(data[0]) : undefined;
+}
+
+// Names for a set of vouchers in one query — the search list labels each result
+// with its beneficiary rather than a bare code.
+export function useBeneficiaryNames(ids: (string | undefined)[]): Record<string, string> {
+	const wanted = Array.from(new Set(ids.filter((v): v is string => !!v)));
+	const key = wanted.join(',');
+	const { data } = useLiveQuery(
+		db
+			.select({ id: beneficiaries.id, fullName: beneficiaries.fullName })
+			.from(beneficiaries)
+			.where(wanted.length > 0 ? inArray(beneficiaries.id, wanted) : sql`1 = 0`),
+		[key],
+	);
+	return Object.fromEntries((data ?? []).map((r) => [r.id, r.fullName]));
+}
+
+// ---- BOMs / hamper contents ----------------------------------------------------
+
+export function useBom(bomId?: string | null): Bom | undefined {
+	const { data: bomRows } = useLiveQuery(
+		db.select().from(boms).where(eq(boms.id, bomId ?? NONE)),
+		[bomId],
+	);
+	const { data: lineRows } = useLiveQuery(
+		db.select().from(bomItems).where(eq(bomItems.bomId, bomId ?? NONE)).orderBy(bomItems.id),
+		[bomId],
+	);
+	const bom = bomRows?.[0];
+	if (!bom) return undefined;
+	return {
+		id: bom.id,
+		itemCode: bom.itemCode,
+		itemName: bom.itemName,
+		quantity: bom.quantity,
+		uom: bom.uom ?? undefined,
+		items: (lineRows ?? []).map((l) => ({
+			itemCode: l.itemCode,
+			itemName: l.itemName,
+			unit: l.unit,
+			qty: l.qty,
+		})),
+	};
+}
+
+// What's inside one hamper, for the contents popup. The BOM the voucher (or
+// stock row) names wins; without one we fall back to the item's default-BOM
+// expansion the pull already sends as hamper items.
+export function useHamperContents(
+	bomId?: string | null,
+	hamperId?: string | null,
+): HamperContents | undefined {
+	const bom = useBom(bomId);
+	const hamper = useHamper(hamperId ?? undefined);
+	if (bom && bom.items.length > 0) {
+		return {
+			bomId: bom.id,
+			source: 'bom',
+			lines: bom.items.map((i) => ({ itemName: i.itemName, unit: i.unit, qty: i.qty })),
+		};
+	}
+	if (hamper && hamper.items.length > 0) {
+		return {
+			source: 'item',
+			lines: hamper.items.map((i) => ({
+				itemName: i.itemName,
+				unit: i.unit,
+				qty: i.qtyPerHousehold,
+			})),
+		};
+	}
+	return undefined;
 }
 
 // ---- hampers -------------------------------------------------------------------

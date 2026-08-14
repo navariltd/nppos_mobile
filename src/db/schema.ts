@@ -41,6 +41,47 @@ export const hamperItems = sqliteTable('hamper_items', {
 	qtyPerHousehold: real('qty_per_household').notNull().default(1),
 });
 
+// ERPNext BOM — what one hamper actually contains. A goods voucher names its
+// own BOM (Entitlement Voucher.bom), which is NOT always the item's default, so
+// the components an agent hands over are read from here rather than from the
+// item. `quantity` is the yield the component quantities are stated per.
+export const boms = sqliteTable('boms', {
+	id: text('id').primaryKey(), // BOM document name
+	itemCode: text('item_code').notNull(),
+	itemName: text('item_name').notNull(),
+	quantity: real('quantity').notNull().default(1),
+	uom: text('uom'),
+});
+
+export const bomItems = sqliteTable(
+	'bom_items',
+	{
+		id: integer('id').primaryKey({ autoIncrement: true }),
+		bomId: text('bom_id')
+			.notNull()
+			.references(() => boms.id),
+		itemCode: text('item_code').notNull(),
+		itemName: text('item_name').notNull(),
+		unit: text('unit').notNull(),
+		qty: real('qty').notNull().default(0),
+	},
+	(t) => [index('bom_items_bom_idx').on(t.bomId)],
+);
+
+// The person behind a voucher — just enough for an agent to confirm they're
+// facing the right recipient (name, ID number, status). Pulled for the parties
+// on the agent's own vouchers only; walk-in vouchers have no row here.
+export const beneficiaries = sqliteTable('beneficiaries', {
+	id: text('id').primaryKey(), // = vouchers.beneficiary_no (Beneficiary name)
+	fullName: text('full_name').notNull(),
+	idNumber: text('id_number'),
+	status: text('status'),
+	phone: text('phone'),
+	householdSize: integer('household_size').notNull().default(0),
+	beneficiaryType: text('beneficiary_type'),
+	district: text('district'),
+});
+
 // One voucher carries one entitlement inline — Goods (hamper/qty/uom/rate) OR
 // Cash (amount) — mirroring the backend's Entitlement Voucher. Running redeemed
 // totals drive partial-redemption status. Belongs to one assignment (ADA).
@@ -57,6 +98,10 @@ export const vouchers = sqliteTable(
 		amount: real('amount').notNull().default(0), // 0 for hamper vouchers
 		// goods side (single item, no child table — like the backend)
 		hamperId: text('hamper_id').references(() => hampers.id),
+		// The BOM this voucher entitles — its components are what gets handed
+		// over. Null on older/cash vouchers; the UI then falls back to the item's
+		// default-BOM expansion in hamper_items.
+		bomId: text('bom_id').references(() => boms.id),
 		qty: real('qty'),
 		uom: text('uom'),
 		rate: real('rate'),
@@ -87,6 +132,8 @@ export const agentStock = sqliteTable(
 			.notNull()
 			.references(() => hampers.id),
 		hamperName: text('hamper_name').notNull(),
+		// Stock is held per item, so its contents are the item's DEFAULT BOM.
+		bomId: text('bom_id').references(() => boms.id),
 		onHand: integer('on_hand').notNull().default(0),
 		issuedToday: integer('issued_today').notNull().default(0),
 		damaged: integer('damaged').notNull().default(0),
@@ -119,6 +166,10 @@ export const posSessions = sqliteTable(
 		// filled at close: expected = openingFloat − session cash payouts
 		expectedCash: real('expected_cash'),
 		countedCash: real('counted_cash'),
+		// Optional close-out photo (signed sheet / fingerprint slip) captured at
+		// close and attached to the POS Closing Entry on push. The local file uri
+		// is kept only so the closed session can still show what was sent.
+		closingPhotoUri: text('closing_photo_uri'),
 		openingServerName: text('opening_server_name'), // POS Opening Entry name
 		closingServerName: text('closing_server_name'), // POS Closing Entry name
 	},
@@ -135,7 +186,12 @@ export const voucherRedemptions = sqliteTable(
 			.notNull()
 			.references(() => vouchers.id),
 		transactionId: text('transaction_id').notNull(), // pos_transactions.id
-		posSessionId: text('pos_session_id'),
+		posSessionId: text('pos_session_id'), // local session id
+		// The POS Opening Entry's server name, stamped at redemption time. This is
+		// what links the redemption to its shift on the backend: the POS Closing
+		// Entry autofills its Linked Redemptions table from submitted redemptions
+		// sharing its pos_opening_entry.
+		posOpeningEntry: text('pos_opening_entry'),
 		type: text('type', { enum: ['cash', 'hamper'] }).notNull(),
 		amount: real('amount'),
 		qty: real('qty'),

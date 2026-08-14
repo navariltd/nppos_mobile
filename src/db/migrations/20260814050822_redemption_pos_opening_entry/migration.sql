@@ -1,0 +1,1 @@
+ALTER TABLE `voucher_redemptions` ADD `pos_opening_entry` text;

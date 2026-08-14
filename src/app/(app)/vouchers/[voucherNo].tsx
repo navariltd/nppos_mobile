@@ -1,4 +1,5 @@
 import { VoucherStatusBadge } from '@/components/domain/badges';
+import { HamperContentsDialog } from '@/components/domain/HamperContentsDialog';
 import { Screen } from '@/components/domain/Screen';
 import { EmptyState, SectionLabel, Stat } from '@/components/domain/widgets';
 import { Alert as AlertBanner, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -24,15 +25,28 @@ import { fileUrl } from '@/lib/voucher-code';
 import {
 	redeemVoucherCash,
 	redeemVoucherGoods,
+	useBeneficiary,
 	useHamper,
 	useOpenPosSession,
 	useRedemptionsForVoucher,
 	useVoucherByNo,
 } from '@/repositories';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Banknote, CalendarDays, FolderOpen, Gift, Info, SearchX } from 'lucide-react-native';
+import {
+	Banknote,
+	BadgeCheck,
+	CalendarDays,
+	ChevronRight,
+	FolderOpen,
+	Gift,
+	IdCard,
+	Info,
+	SearchX,
+	User,
+	Users,
+} from 'lucide-react-native';
 import * as React from 'react';
-import { Alert, Image, View } from 'react-native';
+import { Alert, Image, Pressable, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 // The 2-use hard limit, made visible: one dot per allowed use.
@@ -57,11 +71,13 @@ export default function VoucherDetail() {
 	const router = useRouter();
 	const voucher = useVoucherByNo(voucherNo);
 	const hamper = useHamper(voucher?.hamperId);
+	const beneficiary = useBeneficiary(voucher?.beneficiaryNo);
 	const redemptions = useRedemptionsForVoucher(voucher?.id);
 	const session = useOpenPosSession();
 	const { format, symbol } = useCurrency();
 	const [input, setInput] = React.useState('');
 	const [confirming, setConfirming] = React.useState(false);
+	const [showContents, setShowContents] = React.useState(false);
 
 	if (!voucher) {
 		return (
@@ -112,7 +128,7 @@ export default function VoucherDetail() {
 								<Text className="font-display text-xl tracking-tight">{voucher.voucherNo}</Text>
 								{voucher.beneficiaryNo && (
 									<Text className="text-muted-foreground mt-0.5 text-sm">
-										{voucher.beneficiaryNo}
+										{beneficiary ? `${beneficiary.fullName} · ${voucher.beneficiaryNo}` : voucher.beneficiaryNo}
 									</Text>
 								)}
 							</View>
@@ -148,14 +164,30 @@ export default function VoucherDetail() {
 						</View>
 
 						<View className="gap-2">
-							<View className="flex-row items-center gap-2">
-								<Icon as={isCash ? Banknote : Gift} size={15} className="text-muted-foreground" />
-								<Text className="text-muted-foreground text-sm">
-									{isCash
-										? `Cash · ${format(voucher.amount)} total`
-										: `${hamper?.name ?? 'Hamper'} · ${voucher.qty ?? 0} total`}
-								</Text>
-							</View>
+							{/* Tapping the hamper opens its component list — the agent needs to
+							    know what goes in the bag before handing it over. */}
+							{isCash ? (
+								<View className="flex-row items-center gap-2">
+									<Icon as={Banknote} size={15} className="text-muted-foreground" />
+									<Text className="text-muted-foreground text-sm">
+										Cash · {format(voucher.amount)} total
+									</Text>
+								</View>
+							) : (
+								<Pressable
+									onPress={() => setShowContents(true)}
+									accessibilityRole="button"
+									accessibilityLabel={`Show contents of ${hamper?.name ?? 'hamper'}`}
+									className="active:bg-accent/60 -mx-2 flex-row items-center gap-2 rounded-lg px-2 py-1"
+								>
+									<Icon as={Gift} size={15} className="text-primary" />
+									<Text className="text-primary flex-1 text-sm font-medium" numberOfLines={1}>
+										{hamper?.name ?? 'Hamper'} · {voucher.qty ?? 0} total
+									</Text>
+									<Text className="text-muted-foreground text-[11px]">View contents</Text>
+									<Icon as={ChevronRight} size={14} className="text-muted-foreground" />
+								</Pressable>
+							)}
 							<View className="flex-row items-center gap-2">
 								<Icon as={CalendarDays} size={15} className="text-muted-foreground" />
 								<Text className="text-muted-foreground text-sm">
@@ -170,6 +202,55 @@ export default function VoucherDetail() {
 					</CardContent>
 				</Card>
 			</Animated.View>
+
+			{/* Who the voucher belongs to — the agent confirms the person in front of
+			    them before issuing. Walk-in vouchers have no beneficiary record. */}
+			{beneficiary && (
+				<Animated.View entering={FadeInDown.duration(320).delay(40)}>
+					<SectionLabel>Beneficiary</SectionLabel>
+					<Card>
+						<CardContent className="gap-3 pt-5">
+							<View className="flex-row items-center gap-3">
+								<View className="bg-primary/10 h-11 w-11 items-center justify-center rounded-xl">
+									<Icon as={User} size={20} className="text-primary" />
+								</View>
+								<View className="flex-1">
+									<Text className="font-display-semibold text-base" numberOfLines={1}>
+										{beneficiary.fullName}
+									</Text>
+									<Text className="text-muted-foreground text-xs">{beneficiary.id}</Text>
+								</View>
+								{beneficiary.status && (
+									<View className="border-border flex-row items-center gap-1 rounded-full border px-2.5 py-1">
+										<Icon as={BadgeCheck} size={13} className="text-muted-foreground" />
+										<Text className="text-muted-foreground text-xs">{beneficiary.status}</Text>
+									</View>
+								)}
+							</View>
+							{(beneficiary.idNumber || beneficiary.householdSize > 0) && (
+								<View className="flex-row items-center gap-4">
+									{beneficiary.idNumber && (
+										<View className="flex-row items-center gap-2">
+											<Icon as={IdCard} size={15} className="text-muted-foreground" />
+											<Text className="text-muted-foreground text-sm">
+												ID {beneficiary.idNumber}
+											</Text>
+										</View>
+									)}
+									{beneficiary.householdSize > 0 && (
+										<View className="flex-row items-center gap-2">
+											<Icon as={Users} size={15} className="text-muted-foreground" />
+											<Text className="text-muted-foreground text-sm">
+												Household of {beneficiary.householdSize}
+											</Text>
+										</View>
+									)}
+								</View>
+							)}
+						</CardContent>
+					</Card>
+				</Animated.View>
+			)}
 
 			{!canIssue && (
 				<Animated.View entering={FadeInDown.duration(320).delay(60)}>
@@ -252,6 +333,15 @@ export default function VoucherDetail() {
 					</Card>
 				</>
 			)}
+
+			<HamperContentsDialog
+				open={showContents}
+				onOpenChange={setShowContents}
+				title={hamper?.name ?? 'Hamper'}
+				bomId={voucher.bomId}
+				hamperId={voucher.hamperId}
+				multiplier={Math.max(1, Math.trunc(valid ? value : remaining))}
+			/>
 
 			{/* Redemption confirmation */}
 			<AlertDialog open={confirming} onOpenChange={setConfirming}>

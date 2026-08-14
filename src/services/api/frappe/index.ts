@@ -53,6 +53,7 @@ interface FrappePull {
 		entitlement_type: 'cash' | 'hamper';
 		amount: number;
 		hamper_id?: string;
+		bom_id?: string;
 		qty?: number;
 		uom?: string;
 		rate?: number;
@@ -67,18 +68,38 @@ interface FrappePull {
 		assignment_id?: string;
 		image?: string; // site-relative QR file url, e.g. /files/QNAK4OWSW-qr.png
 	}[];
+	boms: {
+		id: string;
+		item_code: string;
+		item_name: string;
+		quantity: number;
+		uom?: string;
+		items: { item_code: string; item_name: string; unit: string; qty: number }[];
+	}[];
 	hampers: {
 		id: string;
 		name: string;
+		bom_id?: string | null;
 		items: { item_name: string; unit: string; qty_per_household: number }[];
 	}[];
 	agent_stock: {
 		warehouse: string;
 		hamper_id: string;
 		hamper_name: string;
+		bom_id?: string | null;
 		on_hand: number;
 		issued_today: number;
 		damaged: number;
+	}[];
+	beneficiaries: {
+		id: string;
+		full_name: string;
+		id_number?: string | null;
+		status?: string | null;
+		phone?: string | null;
+		household_size: number;
+		beneficiary_type?: string | null;
+		district?: string | null;
 	}[];
 	pos_profiles: {
 		id: string;
@@ -217,6 +238,7 @@ export class FrappeAdapter implements ApiAdapter {
 				entitlementType: v.entitlement_type,
 				amount: v.amount,
 				hamperId: v.hamper_id,
+				bomId: v.bom_id || undefined,
 				qty: v.qty,
 				uom: v.uom,
 				rate: v.rate,
@@ -231,9 +253,23 @@ export class FrappeAdapter implements ApiAdapter {
 				assignmentId: v.assignment_id,
 				image: v.image || undefined,
 			})),
+			boms: (m.boms ?? []).map((b) => ({
+				id: b.id,
+				itemCode: b.item_code,
+				itemName: b.item_name,
+				quantity: b.quantity,
+				uom: b.uom || undefined,
+				items: b.items.map((i) => ({
+					itemCode: i.item_code,
+					itemName: i.item_name,
+					unit: i.unit,
+					qty: i.qty,
+				})),
+			})),
 			hampers: m.hampers.map((h) => ({
 				id: h.id,
 				name: h.name,
+				bomId: h.bom_id || undefined,
 				items: h.items.map((i) => ({
 					itemName: i.item_name,
 					unit: i.unit,
@@ -244,9 +280,20 @@ export class FrappeAdapter implements ApiAdapter {
 				warehouse: s.warehouse,
 				hamperId: s.hamper_id,
 				hamperName: s.hamper_name,
+				bomId: s.bom_id || null,
 				onHand: s.on_hand,
 				issuedToday: s.issued_today,
 				damaged: s.damaged,
+			})),
+			beneficiaries: (m.beneficiaries ?? []).map((b) => ({
+				id: b.id,
+				fullName: b.full_name,
+				idNumber: b.id_number || undefined,
+				status: b.status || undefined,
+				phone: b.phone || undefined,
+				householdSize: b.household_size ?? 0,
+				beneficiaryType: b.beneficiary_type || undefined,
+				district: b.district || undefined,
 			})),
 			posProfiles: m.pos_profiles.map((p) => ({
 				id: p.id,

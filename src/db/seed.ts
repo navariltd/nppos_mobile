@@ -8,6 +8,9 @@ import { db } from './client';
 import {
 	agentStock,
 	assignments,
+	beneficiaries,
+	bomItems,
+	boms,
 	hamperItems,
 	hampers,
 	outbox as outboxTable,
@@ -32,6 +35,47 @@ export function seedIfEmpty(): void {
 					disbursementOrder: a.disbursementOrder,
 					date: a.date,
 					amountToDisburse: a.amountToDisburse,
+				})),
+			)
+			.run();
+
+		tx.insert(boms)
+			.values(
+				mock.boms.map((b) => ({
+					id: b.id,
+					itemCode: b.itemCode,
+					itemName: b.itemName,
+					quantity: b.quantity,
+					uom: b.uom,
+				})),
+			)
+			.run();
+
+		tx.insert(bomItems)
+			.values(
+				mock.boms.flatMap((b) =>
+					b.items.map((i) => ({
+						bomId: b.id,
+						itemCode: i.itemCode,
+						itemName: i.itemName,
+						unit: i.unit,
+						qty: i.qty,
+					})),
+				),
+			)
+			.run();
+
+		tx.insert(beneficiaries)
+			.values(
+				mock.beneficiaries.map((b) => ({
+					id: b.id,
+					fullName: b.fullName,
+					idNumber: b.idNumber,
+					status: b.status,
+					phone: b.phone,
+					householdSize: b.householdSize,
+					beneficiaryType: b.beneficiaryType,
+					district: b.district,
 				})),
 			)
 			.run();
@@ -62,6 +106,7 @@ export function seedIfEmpty(): void {
 					entitlementType: v.entitlementType,
 					amount: v.amount,
 					hamperId: v.hamperId,
+					bomId: v.bomId,
 					qty: v.qty,
 					uom: v.uom,
 					rate: v.rate,

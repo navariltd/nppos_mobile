@@ -40,6 +40,7 @@ export interface Voucher {
 	amount: number; // cash side; 0 for hamper vouchers
 	// goods side
 	hamperId?: string;
+	bomId?: string; // the BOM whose components make up this voucher's hamper
 	qty?: number;
 	uom?: string;
 	rate?: number;
@@ -66,6 +67,47 @@ export interface Hamper {
 	id: string;
 	name: string; // e.g. "Project 1-Jun-2026-Food Basket A"
 	items: HamperItem[];
+	bomId?: string; // the item's default BOM, when it has one
+}
+
+// ERPNext BOM — the authoritative contents of one hamper (backend: BOM +
+// BOM Item). A goods voucher names its own BOM, so this is what the agent
+// actually hands over; `quantity` is the yield the component qtys are per.
+export interface BomLine {
+	itemCode: string;
+	itemName: string;
+	unit: string;
+	qty: number;
+}
+
+export interface Bom {
+	id: string;
+	itemCode: string;
+	itemName: string;
+	quantity: number;
+	uom?: string;
+	items: BomLine[];
+}
+
+// What a hamper contains, resolved for display. A voucher's own BOM wins;
+// otherwise it falls back to the item's default-BOM expansion (hamper items),
+// so vouchers issued before the backend gained `bom` still show something.
+export interface HamperContents {
+	bomId?: string;
+	source: 'bom' | 'item';
+	lines: { itemName: string; unit: string; qty: number }[];
+}
+
+// Enough to confirm the person in front of the agent — never the case file.
+export interface Beneficiary {
+	id: string; // = Voucher.beneficiaryNo
+	fullName: string;
+	idNumber?: string;
+	status?: string;
+	phone?: string;
+	householdSize: number;
+	beneficiaryType?: string;
+	district?: string;
 }
 
 export interface PosProfile {
@@ -87,6 +129,7 @@ export interface PosSession {
 	openingFloat: number;
 	expectedCash?: number;
 	countedCash?: number;
+	closingPhotoUri?: string; // optional close-out photo attached to the entry
 }
 
 // One voucher use — mirrors the backend's Entitlement Redemption.
@@ -94,6 +137,7 @@ export interface VoucherRedemption {
 	id: string;
 	voucherId: string;
 	transactionId: string;
+	posOpeningEntry?: string;
 	type: 'cash' | 'hamper';
 	amount?: number;
 	qty?: number;
@@ -104,6 +148,7 @@ export interface AgentStockRow {
 	warehouse: string; // the POS profile's warehouse this stock belongs to
 	hamperId: string;
 	hamperName: string;
+	bomId?: string | null; // the item's default BOM — what a unit contains
 	onHand: number;
 	issuedToday: number;
 	damaged: number;
