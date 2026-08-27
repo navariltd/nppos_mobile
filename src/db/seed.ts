@@ -118,6 +118,7 @@ export function seedIfEmpty(): void {
 					usesCount: v.usesCount,
 					maxUses: v.maxUses,
 					project: v.project,
+					warehouse: v.warehouse,
 					assignmentId: v.assignmentId,
 				})),
 			)
@@ -136,6 +137,7 @@ export function seedIfEmpty(): void {
 					qty: t.qty,
 					beneficiaryName: t.beneficiaryName,
 					voucherNo: t.voucherNo,
+					warehouse: t.warehouse,
 					project: t.project,
 					assignmentId: t.assignmentId,
 					status: t.status,

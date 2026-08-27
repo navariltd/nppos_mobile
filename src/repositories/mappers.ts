@@ -49,6 +49,7 @@ export function toVoucher(r: typeof vouchers.$inferSelect): Voucher {
 		usesCount: r.usesCount,
 		maxUses: r.maxUses,
 		project: r.project,
+		warehouse: r.warehouse,
 		assignmentId: r.assignmentId ?? undefined,
 		image: r.image ?? undefined,
 	};
@@ -78,6 +79,7 @@ export function toTransaction(r: typeof posTransactions.$inferSelect): PosTransa
 		beneficiaryName: r.beneficiaryName ?? undefined,
 		voucherNo: r.voucherNo ?? undefined,
 		posSessionId: r.posSessionId ?? undefined,
+		warehouse: r.warehouse ?? undefined,
 		project: r.project,
 		assignmentId: r.assignmentId ?? undefined,
 		status: r.status,

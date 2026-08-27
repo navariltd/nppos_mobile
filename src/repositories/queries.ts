@@ -123,25 +123,31 @@ export function findVoucherByNo(voucherNo: string): Voucher | undefined {
 }
 
 // Searching a beneficiary number lists what the agent can still act on —
-// redeemed and expired vouchers are noise at a distribution point. (An exact
-// voucher-number lookup deliberately does NOT filter: the agent scanned that
-// specific voucher and needs to be told it's spent, not "no match".)
-export function useVouchersByBeneficiaryNo(beneficiaryNo?: string): Voucher[] {
+// redeemed and expired vouchers are noise at a distribution point — and only
+// what belongs to the warehouse they are working under, since the device holds
+// every profile's vouchers at once. (An exact voucher-number lookup deliberately
+// does NOT filter either way: the agent scanned that specific voucher and needs
+// to be told it's spent or belongs elsewhere, not "no match".)
+export function useVouchersByBeneficiaryNo(
+	beneficiaryNo?: string,
+	warehouse?: string,
+): Voucher[] {
 	const q = (beneficiaryNo ?? '').trim().toUpperCase();
 	const { data } = useLiveQuery(
 		db
 			.select()
 			.from(vouchers)
 			.where(
-				q
+				q && warehouse
 					? and(
 							sql`upper(${vouchers.beneficiaryNo}) = ${q}`,
 							inArray(vouchers.status, REDEEMABLE_STATUSES),
+							eq(vouchers.warehouse, warehouse),
 						)
 					: sql`1 = 0`,
 			)
 			.orderBy(desc(vouchers.voucherNo)),
-		[q],
+		[q, warehouse],
 	);
 	return (data ?? []).map(toVoucher);
 }
@@ -266,14 +272,25 @@ export function useAgentStock(warehouse?: string): AgentStockRow[] {
 
 // ---- transactions ------------------------------------------------------------------
 
-export function useTransactions(filter: 'all' | SyncStatus = 'all'): PosTransaction[] {
+// The agent's transactions, scoped to the POS profile they are working under.
+// Pass the active profile's warehouse: the device accumulates the transactions
+// of every profile it has ever worked, and showing another warehouse's payouts
+// under this one misrepresents the shift. Omitting it returns everything (the
+// admin/debug view). Rows recorded before transactions carried a warehouse have
+// none and therefore fall outside any scoped list.
+export function useTransactions(
+	filter: 'all' | SyncStatus = 'all',
+	warehouse?: string,
+): PosTransaction[] {
+	const statusFilter = filter === 'all' ? undefined : eq(posTransactions.status, filter);
+	const scope = warehouse ? eq(posTransactions.warehouse, warehouse) : undefined;
 	const { data } = useLiveQuery(
 		db
 			.select()
 			.from(posTransactions)
-			.where(filter === 'all' ? undefined : eq(posTransactions.status, filter))
+			.where(statusFilter && scope ? and(statusFilter, scope) : (statusFilter ?? scope))
 			.orderBy(desc(posTransactions.createdAt)),
-		[filter],
+		[filter, warehouse],
 	);
 	return (data ?? []).map(toTransaction);
 }

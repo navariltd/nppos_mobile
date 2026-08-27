@@ -118,9 +118,16 @@ export const vouchers = sqliteTable(
 		maxUses: integer('max_uses').notNull().default(2), // hard limit (AGENTS.md rule 4)
 		// accounting ref that posts on the redemption (a plain name string)
 		project: text('project').notNull(),
+		// The warehouse this voucher belongs to (Entitlement Voucher.warehouse).
+		// The device holds the vouchers of EVERY profile the agent can work
+		// under, so this is what scopes a list to the active POS profile.
+		warehouse: text('warehouse').notNull().default(''),
 		assignmentId: text('assignment_id').references(() => assignments.id),
 	},
-	(t) => [index('vouchers_beneficiary_no_idx').on(t.beneficiaryNo)],
+	(t) => [
+		index('vouchers_beneficiary_no_idx').on(t.beneficiaryNo),
+		index('vouchers_warehouse_idx').on(t.warehouse),
+	],
 );
 
 // Warehouse stock levels, decremented locally on goods redemption.
@@ -215,6 +222,10 @@ export const posTransactions = sqliteTable(
 		beneficiaryName: text('beneficiary_name'),
 		voucherNo: text('voucher_no'),
 		posSessionId: text('pos_session_id'),
+		// Working context at record time — the active POS profile's warehouse.
+		// Scopes the transaction list to the profile the agent is working under
+		// (null on rows written before this column existed).
+		warehouse: text('warehouse'),
 		project: text('project').notNull(), // accounting ref (name string)
 		assignmentId: text('assignment_id'),
 		status: text('status', { enum: ['pending', 'synced', 'conflict'] })

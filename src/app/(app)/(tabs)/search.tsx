@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { useCurrency } from '@/hooks/currency';
+import { useActivePosProfile } from '@/hooks/pos-profile';
 import {
 	findVoucherByNo,
 	useBeneficiaryNames,
@@ -36,9 +37,15 @@ export default function VoucherSearch() {
 	const [submitted, setSubmitted] = React.useState<{ mode: Mode; q: string } | null>(null);
 	const [scanning, setScanning] = React.useState(false);
 
+	const profile = useActivePosProfile();
+
 	const single = useVoucherSearchByNo(submitted?.mode === 'voucher' ? submitted.q : undefined);
+	// Browsing a beneficiary's vouchers is scoped to the warehouse being worked;
+	// an exact voucher-number lookup stays unscoped so a voucher belonging to
+	// another profile reports that, rather than "no match".
 	const many = useVouchersByBeneficiaryNo(
 		submitted?.mode === 'beneficiary' ? submitted.q : undefined,
+		profile?.warehouse,
 	);
 	const searched = submitted !== null;
 	// Beneficiary-number results are already filtered to what's still redeemable

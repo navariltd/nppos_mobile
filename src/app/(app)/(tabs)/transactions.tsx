@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { useActivePosProfile } from '@/hooks/pos-profile';
 import { useTransactions } from '@/repositories';
 import type { SyncStatus } from '@/types/domain';
 import { useRouter } from 'expo-router';
@@ -25,14 +26,17 @@ const FILTERS: { key: Filter; label: string }[] = [
 export default function Transactions() {
 	const router = useRouter();
 	const [filter, setFilter] = React.useState<Filter>('all');
-	const list = useTransactions(filter);
+	// Scoped to the profile being worked — another warehouse's payouts under this
+	// one would misstate the shift.
+	const profile = useActivePosProfile();
+	const list = useTransactions(filter, profile?.warehouse);
 
 	return (
 		<Screen edges={['top']} scroll={false}>
 			<View>
 				<Text variant="h3">Activity</Text>
 				<Text className="text-muted-foreground mt-0.5 text-sm">
-					History · pending sync · conflicts
+					{profile ? `${profile.warehouse} · ` : ''}History · pending sync · conflicts
 				</Text>
 			</View>
 

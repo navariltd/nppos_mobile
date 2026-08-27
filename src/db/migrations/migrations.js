@@ -10,6 +10,7 @@ import m0006 from './20260724034008_nppos_voucher_centric_model/migration.sql';
 import m0007 from './20260806154357_voucher_qr_image/migration.sql';
 import m0008 from './20260813121613_voucher_bom_and_beneficiary/migration.sql';
 import m0009 from './20260814050822_redemption_pos_opening_entry/migration.sql';
+import m0010 from './20260826050446_voucher_and_txn_warehouse/migration.sql';
 
   export default {
     migrations: {
@@ -22,7 +23,8 @@ import m0009 from './20260814050822_redemption_pos_opening_entry/migration.sql';
 "20260724034008_nppos_voucher_centric_model": m0006,
 "20260806154357_voucher_qr_image": m0007,
 "20260813121613_voucher_bom_and_beneficiary": m0008,
-"20260814050822_redemption_pos_opening_entry": m0009
+"20260814050822_redemption_pos_opening_entry": m0009,
+"20260826050446_voucher_and_txn_warehouse": m0010
 }
   }
   

@@ -53,6 +53,8 @@ export interface Voucher {
 	usesCount: number; // hard cap of 2
 	maxUses: number;
 	project: string; // accounting ref (name string)
+	// The warehouse this voucher belongs to — scopes it to one POS profile.
+	warehouse: string;
 	assignmentId?: string;
 	image?: string;
 }
@@ -164,6 +166,8 @@ export interface PosTransaction {
 	beneficiaryName?: string;
 	voucherNo?: string;
 	posSessionId?: string;
+	// Active POS profile's warehouse at record time (absent on older rows).
+	warehouse?: string;
 	project: string; // accounting ref (name string)
 	assignmentId?: string;
 	status: SyncStatus;

@@ -19,6 +19,7 @@ import { Icon } from '@/components/ui/icon';
 import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { useCurrency } from '@/hooks/currency';
+import { useActivePosProfile } from '@/hooks/pos-profile';
 import { formatDate } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { fileUrl } from '@/lib/voucher-code';
@@ -42,6 +43,7 @@ import {
 	IdCard,
 	Info,
 	SearchX,
+	Store,
 	User,
 	Users,
 } from 'lucide-react-native';
@@ -74,6 +76,7 @@ export default function VoucherDetail() {
 	const beneficiary = useBeneficiary(voucher?.beneficiaryNo);
 	const redemptions = useRedemptionsForVoucher(voucher?.id);
 	const session = useOpenPosSession();
+	const profile = useActivePosProfile();
 	const { format, symbol } = useCurrency();
 	const [input, setInput] = React.useState('');
 	const [confirming, setConfirming] = React.useState(false);
@@ -93,10 +96,17 @@ export default function VoucherDetail() {
 		? voucher.amount - voucher.redeemedAmount
 		: (voucher.qty ?? 0) - voucher.redeemedQty;
 	const usesLeft = voucher.maxUses - voucher.usesCount;
+	// A voucher from another profile's warehouse is reachable by an exact
+	// voucher-no search (deliberately — the agent scanned it and deserves a real
+	// answer) but must not be issued against this shift. The mutation refuses it
+	// too; this is the UI half so the button is never a dead end.
+	const wrongWarehouse =
+		!!voucher.warehouse && !!profile?.warehouse && voucher.warehouse !== profile.warehouse;
 	const canIssue =
 		(voucher.status === 'active' || voucher.status === 'partially_redeemed') &&
 		usesLeft > 0 &&
-		remaining > 0;
+		remaining > 0 &&
+		!wrongWarehouse;
 
 	// Default the amount/qty to the full remaining; agent can lower it (partial).
 	const value = input.trim() === '' ? remaining : Number(input);
@@ -198,6 +208,23 @@ export default function VoucherDetail() {
 								<Icon as={FolderOpen} size={15} className="text-muted-foreground" />
 								<Text className="text-muted-foreground text-sm">{voucher.project}</Text>
 							</View>
+							{voucher.warehouse ? (
+								<View className="flex-row items-center gap-2">
+									<Icon
+										as={Store}
+										size={15}
+										className={wrongWarehouse ? 'text-warning' : 'text-muted-foreground'}
+									/>
+									<Text
+										className={cn(
+											'text-sm',
+											wrongWarehouse ? 'text-warning' : 'text-muted-foreground',
+										)}
+									>
+										{voucher.warehouse}
+									</Text>
+								</View>
+							) : null}
 						</View>
 					</CardContent>
 				</Card>
@@ -255,15 +282,19 @@ export default function VoucherDetail() {
 			{!canIssue && (
 				<Animated.View entering={FadeInDown.duration(320).delay(60)}>
 					<AlertBanner icon={Info} className="border-warning/40 bg-warning/10">
-						<AlertTitle className="text-warning">Cannot redeem</AlertTitle>
+						<AlertTitle className="text-warning">
+							{wrongWarehouse ? 'Different POS profile' : 'Cannot redeem'}
+						</AlertTitle>
 						<AlertDescription className="text-warning">
-							{voucher.status === 'redeemed'
-								? 'Voucher is fully redeemed.'
-								: voucher.status === 'expired'
-									? 'Voucher is outside its validity window.'
-									: remaining <= 0
-										? 'Nothing left to redeem on this voucher.'
-										: 'This voucher cannot be redeemed.'}
+							{wrongWarehouse
+								? `This voucher belongs to ${voucher.warehouse}. Switch to that POS profile to redeem it.`
+								: voucher.status === 'redeemed'
+									? 'Voucher is fully redeemed.'
+									: voucher.status === 'expired'
+										? 'Voucher is outside its validity window.'
+										: remaining <= 0
+											? 'Nothing left to redeem on this voucher.'
+											: 'This voucher cannot be redeemed.'}
 						</AlertDescription>
 					</AlertBanner>
 				</Animated.View>

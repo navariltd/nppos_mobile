@@ -169,6 +169,7 @@ export const vouchers: Voucher[] = [
 		usesCount: 0,
 		maxUses: 2,
 		project: PROJECT,
+		warehouse: 'WH-NRB-014',
 		assignmentId: 'ASG-01',
 	},
 	// Same beneficiary, but expired — shows up in a beneficiary-no search.
@@ -186,6 +187,7 @@ export const vouchers: Voucher[] = [
 		usesCount: 0,
 		maxUses: 2,
 		project: PROJECT,
+		warehouse: 'WH-NRB-014',
 		assignmentId: 'ASG-01',
 	},
 	// Fully redeemed cash voucher.
@@ -203,6 +205,7 @@ export const vouchers: Voucher[] = [
 		usesCount: 2,
 		maxUses: 2,
 		project: PROJECT,
+		warehouse: 'WH-NRB-014',
 		assignmentId: 'ASG-01',
 	},
 	// Goods voucher — redeems as a hamper from the agent's warehouse.
@@ -225,6 +228,33 @@ export const vouchers: Voucher[] = [
 		usesCount: 0,
 		maxUses: 2,
 		project: PROJECT,
+		warehouse: 'WH-NRB-014',
+		assignmentId: 'ASG-01',
+	},
+	// Deliberately on the OTHER profile's warehouse, and for a beneficiary who
+	// also holds vouchers in WH-NRB-014 — so switching profiles visibly changes
+	// what a beneficiary-no search returns, and redeeming this one while the
+	// Kibra Field profile is active is correctly refused.
+	{
+		id: 'VCH-5',
+		voucherNo: 'V-2026-88260',
+		beneficiaryNo: 'B-9001',
+		entitlementType: 'hamper',
+		amount: 0,
+		hamperId: 'HMP-A',
+		bomId: 'BOM-HMP-A-001',
+		qty: 1,
+		uom: 'Nos',
+		rate: 0,
+		redeemedAmount: 0,
+		redeemedQty: 0,
+		validFrom: '2026-07-01',
+		validTo: '2026-07-31',
+		status: 'active',
+		usesCount: 0,
+		maxUses: 2,
+		project: PROJECT,
+		warehouse: 'WH-NRB-OUT-01',
 		assignmentId: 'ASG-01',
 	},
 ];
@@ -246,6 +276,7 @@ export const transactions: PosTransaction[] = [
 		subtitle: 'B-9077 · V-2026-88250',
 		qty: 1,
 		voucherNo: 'V-2026-88250',
+		warehouse: 'WH-NRB-014',
 		project: PROJECT,
 		assignmentId: 'ASG-01',
 		status: 'synced',
@@ -259,6 +290,7 @@ export const transactions: PosTransaction[] = [
 		subtitle: 'Voucher V-2026-88232',
 		amount: 2500,
 		voucherNo: 'V-2026-88232',
+		warehouse: 'WH-NRB-014',
 		project: PROJECT,
 		assignmentId: 'ASG-01',
 		status: 'pending',
@@ -271,6 +303,7 @@ export const transactions: PosTransaction[] = [
 		subtitle: 'Voucher V-2026-88240',
 		amount: 2000,
 		voucherNo: 'V-2026-88240',
+		warehouse: 'WH-NRB-014',
 		project: PROJECT,
 		assignmentId: 'ASG-01',
 		status: 'synced',

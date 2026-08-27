@@ -65,6 +65,7 @@ interface FrappePull {
 		uses_count: number;
 		max_uses: number;
 		project: string;
+		warehouse: string;
 		assignment_id?: string;
 		image?: string; // site-relative QR file url, e.g. /files/QNAK4OWSW-qr.png
 	}[];
@@ -250,6 +251,7 @@ export class FrappeAdapter implements ApiAdapter {
 				usesCount: v.uses_count,
 				maxUses: v.max_uses,
 				project: v.project,
+				warehouse: v.warehouse ?? '',
 				assignmentId: v.assignment_id,
 				image: v.image || undefined,
 			})),

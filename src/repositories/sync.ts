@@ -42,7 +42,10 @@ export function upsertPosProfiles(profiles: PosProfile[]): void {
 	if (profiles.length === 0) return;
 	db.transaction((tx) => {
 		for (const p of profiles) {
-			tx.insert(posProfiles).values(p).onConflictDoUpdate({ target: posProfiles.id, set: p }).run();
+			tx.insert(posProfiles)
+				.values(p)
+				.onConflictDoUpdate({ target: posProfiles.id, set: p })
+				.run();
 		}
 	});
 }
@@ -62,13 +65,19 @@ export function replacePosProfiles(profiles: PosProfile[]): void {
 				.all()
 				.map((r) => r.id),
 		);
-		for (const row of tx.select({ id: posProfiles.id }).from(posProfiles).all()) {
+		for (const row of tx
+			.select({ id: posProfiles.id })
+			.from(posProfiles)
+			.all()) {
 			if (!keep.has(row.id) && !referenced.has(row.id)) {
 				tx.delete(posProfiles).where(eq(posProfiles.id, row.id)).run();
 			}
 		}
 		for (const p of profiles) {
-			tx.insert(posProfiles).values(p).onConflictDoUpdate({ target: posProfiles.id, set: p }).run();
+			tx.insert(posProfiles)
+				.values(p)
+				.onConflictDoUpdate({ target: posProfiles.id, set: p })
+				.run();
 		}
 	});
 }
@@ -173,7 +182,12 @@ export function markPushAccepted(item: OutboxItem, serverName: string): void {
 			const ref = item.payload.session;
 			tx.update(posSessions)
 				.set({ closingServerName: serverName })
-				.where(or(eq(posSessions.id, ref), eq(posSessions.openingServerName, ref)))
+				.where(
+					or(
+						eq(posSessions.id, ref),
+						eq(posSessions.openingServerName, ref),
+					),
+				)
 				.run();
 		}
 		// Most kinds also have a matching pos_transactions row (same id).
@@ -220,16 +234,54 @@ export function getPullCursors(): PullCursors {
 	return cursors as PullCursors;
 }
 
+// Units still queued to leave each warehouse, keyed `warehouse item`.
+//
+// The outbox IS the set of mutations the server has not applied yet, so its
+// goods_issue / stock_return / stock_damaged payloads are exactly the deductions
+// the pulled Bin quantity cannot know about. Without this the server's on-hand
+// would undo a local decrement whose push hasn't landed, and the agent would see
+// stock they have already handed out — then watch it drop twice once it syncs.
+function pendingStockDeductions(): Map<string, number> {
+	const out = new Map<string, number>();
+	for (const row of db
+		.select({ payload: outbox.payload })
+		.from(outbox)
+		.all()) {
+		let p: OutboxPayload;
+		try {
+			p = JSON.parse(row.payload) as OutboxPayload;
+		} catch {
+			continue;
+		}
+		if (
+			p.kind !== 'goods_issue' &&
+			p.kind !== 'stock_return' &&
+			p.kind !== 'stock_damaged'
+		) {
+			continue;
+		}
+		const { warehouse, hamper, qty } = p;
+		if (!warehouse || !hamper || !qty) continue;
+		const key = `${warehouse} ${hamper}`;
+		out.set(key, (out.get(key) ?? 0) + qty);
+	}
+	return out;
+}
+
 // Upsert pulled reference data. Local pending work wins: vouchers referenced by
 // still-pending local transactions are skipped this round — the server copy
-// lands once the pending push resolves (ARCHITECTURE.md §4).
+// lands once the pending push resolves (ARCHITECTURE.md §4) — and pulled stock
+// levels are reduced by whatever is still queued to leave the warehouse.
 export function applyPull(pull: PullResponse): number {
 	const pending = db
 		.select({ voucherNo: posTransactions.voucherNo })
 		.from(posTransactions)
 		.where(eq(posTransactions.status, 'pending'))
 		.all();
-	const pendingVoucherNos = new Set(pending.map((p) => p.voucherNo).filter(Boolean));
+	const pendingVoucherNos = new Set(
+		pending.map((p) => p.voucherNo).filter(Boolean),
+	);
+	const queuedOut = pendingStockDeductions();
 
 	let upserts = 0;
 	db.transaction((tx) => {
@@ -275,6 +327,7 @@ export function applyPull(pull: PullResponse): number {
 				usesCount: v.usesCount,
 				maxUses: v.maxUses,
 				project: v.project,
+				warehouse: v.warehouse,
 				assignmentId: v.assignmentId ?? null,
 				image: v.image ?? null,
 			};
@@ -292,7 +345,10 @@ export function applyPull(pull: PullResponse): number {
 				quantity: b.quantity,
 				uom: b.uom ?? null,
 			};
-			tx.insert(boms).values(row).onConflictDoUpdate({ target: boms.id, set: row }).run();
+			tx.insert(boms)
+				.values(row)
+				.onConflictDoUpdate({ target: boms.id, set: row })
+				.run();
 			// Components are replaced wholesale — they have no local edits.
 			tx.delete(bomItems).where(eq(bomItems.bomId, b.id)).run();
 			if (b.items.length > 0) {
@@ -322,7 +378,10 @@ export function applyPull(pull: PullResponse): number {
 		for (const h of pull.hampers) {
 			tx.insert(hampers)
 				.values({ id: h.id, name: h.name })
-				.onConflictDoUpdate({ target: hampers.id, set: { name: h.name } })
+				.onConflictDoUpdate({
+					target: hampers.id,
+					set: { name: h.name },
+				})
 				.run();
 			// Component list is replaced wholesale — it has no local edits.
 			tx.delete(hamperItems).where(eq(hamperItems.hamperId, h.id)).run();
@@ -334,16 +393,22 @@ export function applyPull(pull: PullResponse): number {
 			upserts++;
 		}
 		for (const s of pull.agentStock) {
+			// onHand comes from the server's Bin and is authoritative. issuedToday
+			// and damaged are DEVICE-side day counters the backend has no notion of
+			// (it always sends 0), so they are set on first insert only — updating
+			// them here would reset the agent's running tallies on every sync.
+			const onHand = Math.max(
+				0,
+				s.onHand - (queuedOut.get(`${s.warehouse} ${s.hamperId}`) ?? 0),
+			);
 			tx.insert(agentStock)
-				.values({ ...s, bomId: s.bomId ?? null })
+				.values({ ...s, bomId: s.bomId ?? null, onHand })
 				.onConflictDoUpdate({
 					target: [agentStock.warehouse, agentStock.hamperId],
 					set: {
 						hamperName: s.hamperName,
 						bomId: s.bomId ?? null,
-						onHand: s.onHand,
-						issuedToday: s.issuedToday,
-						damaged: s.damaged,
+						onHand,
 					},
 				})
 				.run();

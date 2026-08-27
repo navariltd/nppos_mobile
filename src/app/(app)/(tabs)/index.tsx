@@ -31,9 +31,11 @@ export default function Dashboard() {
 	const profile = useActivePosProfile();
 	const { pending, conflicts } = useSyncCounts();
 
-	// Real logged-in identity (not mock). region/code can be blank on the real
-	// backend — fall back to the active POS profile's warehouse.
-	const subtitle = [agent?.code || profile?.warehouse, agent?.region]
+	// The ACTIVE profile's warehouse identifies the working context and must win:
+	// agent.code is fixed at login (one arbitrary profile's warehouse) and would
+	// otherwise keep naming that profile no matter which one the agent switches
+	// to. It stays as the fallback for a session with no profile row yet.
+	const subtitle = [profile?.warehouse || agent?.code, agent?.region]
 		.filter(Boolean)
 		.join(' · ');
 

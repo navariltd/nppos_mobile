@@ -48,12 +48,16 @@ function getOpenSession() {
 // shift boundaries are online-only) — so an open session always has its name.
 // The second check is a belt on that invariant, not an expected path: refusing
 // to redeem is right when we can't say which shift the redemption belongs to.
+// Also resolves the shift's POS profile: its warehouse is the working context
+// every redemption is scoped to — the stock goods leave from, and the warehouse
+// a voucher must belong to before it can be issued here.
 function requireOpenSession():
-	| { error: string; session?: never; openingEntry?: never }
+	| { error: string; session?: never; openingEntry?: never; profile?: never }
 	| {
 			error?: undefined;
 			session: typeof posSessions.$inferSelect;
 			openingEntry: string;
+			profile: typeof posProfiles.$inferSelect;
 	  } {
 	const session = getOpenSession();
 	if (!session) {
@@ -64,18 +68,34 @@ function requireOpenSession():
 			error: 'This shift never reached the server. Close it and reopen while online.',
 		};
 	}
-	return { session, openingEntry: session.openingServerName };
+	const profile = db
+		.select()
+		.from(posProfiles)
+		.where(eq(posProfiles.id, session.posProfileId))
+		.get();
+	if (!profile) return { error: 'POS profile for this session not found.' };
+	return { session, openingEntry: session.openingServerName, profile };
 }
 
 type VoucherContext =
 	| { error: string; voucher?: never }
 	| { error?: undefined; voucher: typeof vouchers.$inferSelect; recipientLabel: string };
 
-// Load a voucher and validate it is redeemable (status, validity, use count).
-// Shared by the cash and goods redemption paths.
-function loadVoucherForRedeem(voucherId: string): VoucherContext {
+// Load a voucher and validate it is redeemable (status, validity, use count,
+// and that it belongs to the warehouse being worked). Shared by the cash and
+// goods redemption paths.
+function loadVoucherForRedeem(voucherId: string, sessionWarehouse: string): VoucherContext {
 	const voucher = db.select().from(vouchers).where(eq(vouchers.id, voucherId)).get();
 	if (!voucher) return { error: 'Voucher not found.' } as const;
+
+	// The device holds the vouchers of every profile the agent can work under, so
+	// a voucher reachable by search is not necessarily redeemable HERE. Issuing it
+	// against the open shift would post the redemption to the wrong warehouse.
+	if (voucher.warehouse && voucher.warehouse !== sessionWarehouse) {
+		return {
+			error: `This voucher belongs to ${voucher.warehouse}. Switch to that POS profile to redeem it.`,
+		} as const;
+	}
 
 	// Backend statuses (docs/NPPOS_WEB.md): partially redeemed is still usable.
 	if (voucher.status !== 'active' && voucher.status !== 'partially_redeemed') {
@@ -119,7 +139,13 @@ function nextVoucherStatus(
 // ---- cash redemption (partial-capable) --------------------------------------
 
 export function redeemVoucherCash(voucherId: string, amount: number): MutationResult {
-	const ctx = loadVoucherForRedeem(voucherId);
+	// Shift first: its profile's warehouse is what the voucher is validated
+	// against, so a voucher from another profile can never be paid out here.
+	const shift = requireOpenSession();
+	if (shift.error !== undefined) return { ok: false, reason: shift.error };
+	const { session, openingEntry, profile } = shift;
+
+	const ctx = loadVoucherForRedeem(voucherId, profile.warehouse);
 	if (ctx.error !== undefined) return { ok: false, reason: ctx.error };
 	const { voucher, recipientLabel } = ctx;
 	if (voucher.entitlementType !== 'cash') return { ok: false, reason: 'Not a cash voucher.' };
@@ -129,10 +155,6 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 	if (amount > remaining) {
 		return { ok: false, reason: `Amount exceeds the ${remaining} remaining on this voucher.` };
 	}
-
-	const shift = requireOpenSession();
-	if (shift.error !== undefined) return { ok: false, reason: shift.error };
-	const { session, openingEntry } = shift;
 
 	const fullyDrawn = voucher.redeemedAmount + amount >= voucher.amount;
 	const id = uuid();
@@ -146,6 +168,7 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 				amount,
 				voucherNo: voucher.voucherNo,
 				posSessionId: session.id,
+				warehouse: profile.warehouse,
 				project: voucher.project,
 				assignmentId: voucher.assignmentId,
 				status: 'pending',
@@ -194,7 +217,13 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 // ---- goods / hamper redemption (partial-capable) ----------------------------
 
 export function redeemVoucherGoods(voucherId: string, qty: number): MutationResult {
-	const ctx = loadVoucherForRedeem(voucherId);
+	// Goods draw from the session profile's warehouse (stock is per warehouse),
+	// so the shift is resolved first and the voucher validated against it.
+	const shift = requireOpenSession();
+	if (shift.error !== undefined) return { ok: false, reason: shift.error };
+	const { session, openingEntry, profile } = shift;
+
+	const ctx = loadVoucherForRedeem(voucherId, profile.warehouse);
 	if (ctx.error !== undefined) return { ok: false, reason: ctx.error };
 	const { voucher, recipientLabel } = ctx;
 	if (voucher.entitlementType !== 'hamper' || !voucher.hamperId) {
@@ -207,18 +236,6 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 	if (qty > remaining) {
 		return { ok: false, reason: `Quantity exceeds the ${remaining} remaining on this voucher.` };
 	}
-
-	const shift = requireOpenSession();
-	if (shift.error !== undefined) return { ok: false, reason: shift.error };
-	const { session, openingEntry } = shift;
-
-	// Goods draw from the session profile's warehouse (stock is per warehouse).
-	const profile = db
-		.select()
-		.from(posProfiles)
-		.where(eq(posProfiles.id, session.posProfileId))
-		.get();
-	if (!profile) return { ok: false, reason: 'POS profile for this session not found.' };
 
 	const stock = db
 		.select()
@@ -242,6 +259,7 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 				qty,
 				voucherNo: voucher.voucherNo,
 				posSessionId: session.id,
+				warehouse: profile.warehouse,
 				project: voucher.project,
 				assignmentId: voucher.assignmentId,
 				status: 'pending',
@@ -336,6 +354,7 @@ function adjustStock(
 						? `Returned ${qty} to central warehouse`
 						: `${qty} written off — damaged/expired`,
 				qty,
+				warehouse,
 				project: assignment?.project ?? 'General',
 				assignmentId: assignment?.id,
 				status: 'pending',
