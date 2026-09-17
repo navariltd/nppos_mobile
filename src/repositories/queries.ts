@@ -381,23 +381,6 @@ export function usePosSessions(): PosSession[] {
 	return (data ?? []).map(toPosSession);
 }
 
-// Cash paid out within one session — reconciliation's expected-cash basis.
-export function useSessionCashTotal(sessionId?: string): number {
-	const { data } = useLiveQuery(
-		db
-			.select({ amount: posTransactions.amount })
-			.from(posTransactions)
-			.where(
-				and(
-					eq(posTransactions.posSessionId, sessionId ?? NONE),
-					eq(posTransactions.type, 'cash_payment'),
-				),
-			),
-		[sessionId],
-	);
-	return (data ?? []).reduce((s, r) => s + (r.amount ?? 0), 0);
-}
-
 // ---- voucher redemptions --------------------------------------------------------
 
 export function useRedemptionsForVoucher(voucherId?: string): VoucherRedemption[] {

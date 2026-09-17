@@ -17,7 +17,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
-import { Input } from '@/components/ui/input';
 import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import {
@@ -33,7 +32,6 @@ import {
 	closePosSession,
 	useAgentStock,
 	useOpenPosSession,
-	useSessionCashTotal,
 	useSessionTransactions,
 	useSyncCounts,
 } from '@/repositories';
@@ -60,13 +58,9 @@ export default function Reconciliation() {
 	const { pending, conflicts } = useSyncCounts();
 	const session = useOpenPosSession();
 	const transactions = useSessionTransactions(session?.id);
-	const sessionCash = useSessionCashTotal(session?.id);
 	const preflight = useShiftPreflight();
-	const { format, symbol } = useCurrency();
-	const [counted, setCounted] = React.useState('');
+	const { format } = useCurrency();
 	const [photo, setPhoto] = React.useState<CapturedPhoto | null>(null);
-
-	const expectedCash = session ? session.openingFloat - sessionCash : 0;
 
 	const attach = async (capture: () => Promise<CaptureResult>) => {
 		const result = await capture();
@@ -81,10 +75,9 @@ export default function Reconciliation() {
 		if (result.photo) setPhoto(result.photo);
 	};
 
-	// Closing is the reconcile moment, and it is ONLINE-ONLY: every transaction
-	// the closing entry accounts for must already be on the server, otherwise
-	// its expected-cash figure is a guess. So sync FIRST (preflight), then write
-	// the closing entry, then push it.
+	// Closing is ONLINE-ONLY: every transaction the closing entry accounts for
+	// must already be on the server before the shift is sealed. So sync FIRST
+	// (preflight), then write the closing entry, then push it.
 	const submitClose = async () => {
 		if (!session) return;
 
@@ -94,7 +87,7 @@ export default function Reconciliation() {
 			return;
 		}
 
-		const result = closePosSession(Number(counted) || 0, photo ?? undefined);
+		const result = closePosSession(photo ?? undefined);
 		if (!result.ok) {
 			Alert.alert('Could not close', result.reason);
 			return;
@@ -207,17 +200,14 @@ export default function Reconciliation() {
 									<Text className="text-sm font-medium">{formatTime(session.openedAt)}</Text>
 								</View>
 								<View className="flex-row justify-between">
-									<Text className="text-muted-foreground text-sm">Opening float</Text>
-									<Text className="text-sm font-medium">{format(session.openingFloat)}</Text>
+									<Text className="text-muted-foreground text-sm">Profile</Text>
+									<Text className="text-sm font-medium">{profile?.name ?? '—'}</Text>
 								</View>
 								<View className="flex-row justify-between">
-									<Text className="text-muted-foreground text-sm">Cash paid out this session</Text>
-									<Text className="text-sm font-medium">{format(sessionCash)}</Text>
-								</View>
-								<Separator className="my-1" />
-								<View className="flex-row justify-between">
-									<Text className="font-medium">Expected cash in hand</Text>
-									<Text className="font-display-semibold">{format(expectedCash)}</Text>
+									<Text className="text-muted-foreground text-sm">Distributed this session</Text>
+									<Text className="text-sm font-medium">
+										{transactions.length} transaction{transactions.length === 1 ? '' : 's'}
+									</Text>
 								</View>
 							</CardContent>
 						</Card>
@@ -316,16 +306,6 @@ export default function Reconciliation() {
 										your cash and enter the actual amount.
 									</AlertDialogDescription>
 								</AlertDialogHeader>
-								<View className="gap-1.5">
-									<Text className="text-muted-foreground text-xs">Counted cash ({symbol})</Text>
-									<Input
-										value={counted}
-										onChangeText={setCounted}
-										keyboardType="number-pad"
-										placeholder={String(expectedCash)}
-										className="h-12 rounded-xl"
-									/>
-								</View>
 								<AlertDialogFooter>
 									<AlertDialogCancel>
 										<Text>Cancel</Text>

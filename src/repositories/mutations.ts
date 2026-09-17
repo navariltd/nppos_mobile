@@ -376,10 +376,17 @@ export function returnStock(warehouse: string, hamperId: string, qty: number): M
 
 // ---- POS session (opening / closing entry) ---------------------------------------
 
-// Start of shift. Syncs as an ERPNext POS Opening Entry (cash mode, one
-// balance row = the opening float).
-export function openPosSession(openingFloat: number, posProfileId: string): MutationResult {
-	if (openingFloat < 0) return { ok: false, reason: 'Opening float cannot be negative.' };
+// Start of shift. Syncs as an ERPNext POS Opening Entry.
+//
+// CASH BALANCES ARE OUT OF SCOPE. This POS verifies and distributes what the
+// system already holds; it does not tally a collection point's cash drawer, and
+// asking an agent to count a float invites "the balance doesn't tally" support
+// work the project deliberately doesn't own. ERPNext still wants a balance row
+// on the opening entry, so the float is always ZERO — enough to satisfy the
+// document, never shown to or asked of the agent.
+const OPENING_FLOAT = 0;
+
+export function openPosSession(posProfileId: string): MutationResult {
 	if (getOpenSession()) return { ok: false, reason: 'A session is already open.' };
 
 	const profile = db.select().from(posProfiles).where(eq(posProfiles.id, posProfileId)).get();
@@ -393,7 +400,7 @@ export function openPosSession(openingFloat: number, posProfileId: string): Muta
 				posProfileId: profile.id,
 				status: 'open',
 				openedAt: nowIso(),
-				openingFloat,
+				openingFloat: OPENING_FLOAT,
 			})
 			.run();
 		tx.insert(outbox)
@@ -402,7 +409,7 @@ export function openPosSession(openingFloat: number, posProfileId: string): Muta
 				payload: JSON.stringify({
 					kind: 'pos_opening',
 					posProfile: profile.id,
-					openingFloat,
+					openingFloat: OPENING_FLOAT,
 				}),
 				createdAt: nowIso(),
 			})
@@ -448,40 +455,21 @@ export function discardUnsyncedPosSession(sessionId: string): MutationResult {
 	return { ok: true, transactionId: sessionId };
 }
 
-// End of shift. Expected cash = opening float − cash paid out this session
-// (a disbursement POS pays cash OUT). Syncs as a POS Closing Entry linked to
-// the opening. Omitting countedCash auto-closes at the expected amount — the
-// sign-out path uses this so a session is never left dangling; the payload is
-// flagged so the backend/admin can tell counted from assumed.
+// End of shift. Syncs as a POS Closing Entry linked to the opening.
+//
+// Like the opening, the cash figures are all ZERO and never counted: the POS
+// does not reconcile a collection point's drawer (see OPENING_FLOAT). The
+// closing entry exists to close the shift and carry its linked redemptions —
+// what was actually distributed is the record that matters, and that lives on
+// the Entitlement Redemptions, not on a cash difference.
 //
 // `photo` is optional proof-of-distribution the agent captures at close (a
 // signed sheet or fingerprint slip). It rides in the outbox payload as base64
 // and the backend attaches it to the POS Closing Entry; the local file uri is
 // kept on the session row so the closed shift can still show what was sent.
-export function closePosSession(
-	countedCash?: number,
-	photo?: ClosingPhoto & { uri: string },
-): MutationResult {
+export function closePosSession(photo?: ClosingPhoto & { uri: string }): MutationResult {
 	const session = getOpenSession();
 	if (!session) return { ok: false, reason: 'No open session to close.' };
-	if (countedCash !== undefined && countedCash < 0) {
-		return { ok: false, reason: 'Counted cash cannot be negative.' };
-	}
-
-	const cashRows = db
-		.select({ amount: posTransactions.amount })
-		.from(posTransactions)
-		.where(
-			and(
-				eq(posTransactions.posSessionId, session.id),
-				eq(posTransactions.type, 'cash_payment'),
-			),
-		)
-		.all();
-	const paidOut = cashRows.reduce((s, r) => s + (r.amount ?? 0), 0);
-	const expectedCash = session.openingFloat - paidOut;
-	const autoClosed = countedCash === undefined;
-	const counted = countedCash ?? expectedCash;
 
 	const closeId = uuid();
 	db.transaction((tx) => {
@@ -489,8 +477,8 @@ export function closePosSession(
 			.set({
 				status: 'closed',
 				closedAt: nowIso(),
-				expectedCash,
-				countedCash: counted,
+				expectedCash: 0,
+				countedCash: 0,
 				closingPhotoUri: photo?.uri ?? null,
 			})
 			.where(eq(posSessions.id, session.id))
@@ -501,12 +489,12 @@ export function closePosSession(
 				payload: JSON.stringify({
 					kind: 'pos_closing',
 					session: session.id,
-					openingFloat: session.openingFloat,
-					paidOut,
-					expectedCash,
-					countedCash: counted,
-					difference: counted - expectedCash,
-					autoClosed,
+					openingFloat: 0,
+					paidOut: 0,
+					expectedCash: 0,
+					countedCash: 0,
+					difference: 0,
+					autoClosed: false,
 					...(photo
 						? { photo: { name: photo.name, mime: photo.mime, data: photo.data } }
 						: {}),

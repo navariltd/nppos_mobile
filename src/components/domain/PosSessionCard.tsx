@@ -20,10 +20,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
-import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
-import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { formatTime } from '@/lib/format';
 import {
@@ -31,7 +29,6 @@ import {
 	openPosSession,
 	posSessionServerName,
 	useOpenPosSession,
-	useSessionCashTotal,
 } from '@/repositories';
 import { useAppDispatch } from '@/store/hooks';
 import { useRouter } from 'expo-router';
@@ -43,12 +40,9 @@ export function PosSessionCard() {
 	const router = useRouter();
 	const dispatch = useAppDispatch();
 	const profile = useActivePosProfile();
-	const { format, symbol } = useCurrency();
 	const session = useOpenPosSession();
-	const cashPaid = useSessionCashTotal(session?.id);
 	const preflight = useShiftPreflight();
 	const [dialogOpen, setDialogOpen] = React.useState(false);
-	const [float, setFloat] = React.useState('');
 
 	const open = async () => {
 		if (!profile) {
@@ -64,12 +58,11 @@ export function PosSessionCard() {
 			return;
 		}
 
-		const result = openPosSession(Number(float) || 0, profile.id);
+		const result = openPosSession(profile.id);
 		if (!result.ok) {
 			Alert.alert('Could not open session', result.reason);
 			return;
 		}
-		setFloat('');
 
 		// Push the opening immediately: everything issued during the shift
 		// references the POS Opening Entry by its server name.
@@ -106,8 +99,7 @@ export function PosSessionCard() {
 							Session open · since {formatTime(session.openedAt)}
 						</Text>
 						<Text className="text-muted-foreground text-xs">
-							Float {format(session.openingFloat)} · paid out{' '}
-							{format(cashPaid)}
+							{profile?.name ?? 'Distributing'} · ready to issue
 						</Text>
 					</View>
 					<Button
@@ -174,18 +166,6 @@ export function PosSessionCard() {
 							then submits the POS Opening Entry.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
-					<View className="gap-1.5">
-						<Text className="text-muted-foreground text-xs">
-							Opening cash float ({symbol})
-						</Text>
-						<Input
-							value={float}
-							onChangeText={setFloat}
-							keyboardType="number-pad"
-							placeholder="0"
-							className="h-12 rounded-xl"
-						/>
-					</View>
 					<AlertDialogFooter>
 						<AlertDialogCancel>
 							<Text>Cancel</Text>

@@ -168,8 +168,11 @@ export const posSessions = sqliteTable(
 		status: text('status', { enum: ['open', 'closed'] }).notNull().default('open'),
 		openedAt: text('opened_at').notNull(),
 		closedAt: text('closed_at'),
+		// Cash-drawer figures, always ZERO and never shown to the agent: this POS
+		// verifies and distributes what the system holds, it does not reconcile a
+		// collection point's cash. Kept only because ERPNext's POS Opening/Closing
+		// Entries want a balance row (see mutations.ts OPENING_FLOAT).
 		openingFloat: real('opening_float').notNull().default(0),
-		// filled at close: expected = openingFloat − session cash payouts
 		expectedCash: real('expected_cash'),
 		countedCash: real('counted_cash'),
 		// Optional close-out photo (signed sheet / fingerprint slip) captured at
