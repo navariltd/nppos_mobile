@@ -91,8 +91,12 @@ export default function Profile() {
 	const posProfile = useActivePosProfile();
 	const preflight = useShiftPreflight();
 
+	// Only admins may switch profiles; a collection-center user stays on the
+	// profile they picked at login until they sign out.
+	const canSwitchProfile = role === 'admin';
+
 	// Switching the working context mid-shift would orphan the open session's
-	// float/expected-cash math — demand a proper close (reconciliation) first.
+	// transactions — demand a proper close (reconciliation) first.
 	const handleSwitchProfile = () => {
 		if (openSession) {
 			Alert.alert(
@@ -105,9 +109,9 @@ export default function Profile() {
 	};
 
 	// Sign-out is ONLINE-ONLY and leaves nothing behind: sync everything first,
-	// then auto-close any open shift (counted cash defaults to expected, flagged
-	// autoClosed) and push that too. A device that signs out with work still
-	// queued would strand it until someone logs back in on this same device.
+	// then auto-close any open shift and push that too. A device that signs out
+	// with work still queued would strand it until someone logs back in on this
+	// same device.
 	const handleSignOut = async () => {
 		const pre = await preflight.run('sign out');
 		if (!pre.ok) {
@@ -265,8 +269,8 @@ export default function Profile() {
 						icon={Store}
 						label="POS profile"
 						value={posProfile ? `${posProfile.name} · ${posProfile.warehouse}` : 'none'}
-						onPress={handleSwitchProfile}
-						right={Chevron}
+						onPress={canSwitchProfile ? handleSwitchProfile : undefined}
+						right={canSwitchProfile ? Chevron : undefined}
 					/>
 					{/* <Separator />
 					<Row
@@ -300,7 +304,7 @@ export default function Profile() {
 							<AlertDialogTitle>Sign out</AlertDialogTitle>
 							<AlertDialogDescription>
 								{openSession
-									? 'Everything is synced first, then your open POS session is closed and reconciled at the expected cash amount. Sign-out stops if anything fails to reach the server.'
+									? 'Everything is synced first, then your open POS session is closed. Sign-out stops if anything fails to reach the server.'
 									: 'Everything is synced first. Sign-out stops if anything fails to reach the server.'}
 							</AlertDialogDescription>
 						</AlertDialogHeader>
