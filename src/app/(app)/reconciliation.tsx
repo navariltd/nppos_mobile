@@ -301,9 +301,9 @@ export default function Reconciliation() {
 								<AlertDialogHeader>
 									<AlertDialogTitle>Close POS session</AlertDialogTitle>
 									<AlertDialogDescription>
-										Expected cash in hand is {format(expectedCash)} (float{' '}
-										{format(session.openingFloat)} − payouts {format(sessionCash)}). Count
-										your cash and enter the actual amount.
+										Close distribution in {profile?.name ?? 'this'} center. Make sure you
+										are connected to the internet for this session to complete and sync
+										your transactions.
 									</AlertDialogDescription>
 								</AlertDialogHeader>
 								<AlertDialogFooter>

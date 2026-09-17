@@ -134,8 +134,8 @@ export function QrScanner({
 								<Icon as={blocked ? CameraOff : Camera} size={40} className="text-white/70" />
 								<Text className="text-center text-white/80">
 									{blocked
-										? 'Camera access is blocked. Enable it for NPPOS in system settings, then try again.'
-										: 'NPPOS needs camera access to scan voucher QR codes.'}
+										? 'Camera access is blocked. Enable it for AIGT-HDR in system settings, then try again.'
+										: 'AIGT-HDR needs camera access to scan voucher QR codes.'}
 								</Text>
 								<Button
 									variant="secondary"

@@ -160,10 +160,12 @@ export function PosSessionCard() {
 					<AlertDialogHeader>
 						<AlertDialogTitle>Open POS session</AlertDialogTitle>
 						<AlertDialogDescription>
-							Count the cash float you are starting the shift
-							with. Opening syncs first — anything still queued is
-							sent and today's vouchers and stock are pulled —
-							then submits the POS Opening Entry.
+							Open distribution in {profile?.name ?? 'this'} center.
+							If this is not your distribution center, please
+							contact AIGT admin. Opening syncs
+							first — anything still queued is sent and today's
+							vouchers and stock are pulled — then submits the POS
+							Opening Entry.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

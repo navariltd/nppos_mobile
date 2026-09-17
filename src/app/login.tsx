@@ -68,7 +68,7 @@ export default function Login() {
 						</Animated.View>
 						<Animated.View entering={FadeInDown.duration(400).delay(80)} className="items-center">
 							<Text className="text-primary-foreground font-display text-4xl tracking-tight">
-								NPPOS
+								AIGT-HDR
 							</Text>
 							<Text className="text-primary-foreground/70 mt-1 text-sm">
 								HDR Disbursement · Field POS

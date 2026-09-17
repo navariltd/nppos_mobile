@@ -95,7 +95,7 @@ export function BrandSplash({ onFinish }: { onFinish: () => void }) {
 				/>
 			</View>
 			<Animated.View style={[styles.wordmarkWrap, textStyle]}>
-				<Text style={styles.wordmark}>NPPOS</Text>
+				<Text style={styles.wordmark}>AIGT-HDR</Text>
 				<View style={styles.rule} />
 				<Text style={styles.tagline}>HDR Disbursement · Field POS</Text>
 			</Animated.View>

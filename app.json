@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "NPPOS",
+    "name": "AIGT-HDR",
     "slug": "nppos",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -37,7 +37,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "NPPOS uses the camera to scan voucher QR codes.",
+          "cameraPermission": "AIGT-HDR uses the camera to scan voucher QR codes.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -45,8 +45,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "NPPOS attaches a photo of the signed distribution sheet to the shift's closing entry.",
-          "cameraPermission": "NPPOS uses the camera to capture the signed distribution sheet when closing a shift."
+          "photosPermission": "AIGT-HDR attaches a photo of the signed distribution sheet to the shift's closing entry.",
+          "cameraPermission": "AIGT-HDR uses the camera to capture the signed distribution sheet when closing a shift."
         }
       ],
       [
