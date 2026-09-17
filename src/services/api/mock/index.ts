@@ -31,7 +31,6 @@ const SERVER_PREFIX: Record<PushItem['payload']['kind'], string> = {
 	cash_payment: 'ENT-RED-2026-07-',
 	goods_issue: 'ENT-RED-2026-07-',
 	stock_return: 'MAT-STE-2026-',
-	stock_damaged: 'MAT-STE-2026-',
 	pos_opening: 'POS-OPE-2026-',
 	pos_closing: 'POS-CLO-2026-',
 };
@@ -40,7 +39,6 @@ const REJECT_REASON: Record<PushItem['payload']['kind'], string> = {
 	cash_payment: 'Voucher already redeemed on another device.',
 	goods_issue: 'Voucher already redeemed on another device.',
 	stock_return: 'Stock line does not match warehouse records.',
-	stock_damaged: 'Stock line does not match warehouse records.',
 	pos_opening: 'Another opening entry exists for this profile today.',
 	pos_closing: 'Opening entry not found on the backend.',
 };

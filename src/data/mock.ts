@@ -261,11 +261,11 @@ export const vouchers: Voucher[] = [
 
 export const agentStock: AgentStockRow[] = [
 	// Kibra Field POS warehouse
-	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-A', hamperName: 'Food Basket A', bomId: 'BOM-HMP-A-001', onHand: 73, issuedToday: 47, damaged: 2 },
-	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-B', hamperName: 'Hygiene Basket B', bomId: 'BOM-HMP-B-001', onHand: 40, issuedToday: 8, damaged: 0 },
+	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-A', hamperName: 'Food Basket A', bomId: 'BOM-HMP-A-001', onHand: 73, issuedToday: 47 },
+	{ warehouse: 'WH-NRB-014', hamperId: 'HMP-B', hamperName: 'Hygiene Basket B', bomId: 'BOM-HMP-B-001', onHand: 40, issuedToday: 8 },
 	// Kibra Outreach POS warehouse — deliberately different so switching
 	// profiles visibly switches the stock view.
-	{ warehouse: 'WH-NRB-OUT-01', hamperId: 'HMP-A', hamperName: 'Food Basket A', bomId: 'BOM-HMP-A-001', onHand: 18, issuedToday: 3, damaged: 0 },
+	{ warehouse: 'WH-NRB-OUT-01', hamperId: 'HMP-A', hamperName: 'Food Basket A', bomId: 'BOM-HMP-A-001', onHand: 18, issuedToday: 3 },
 ];
 
 export const transactions: PosTransaction[] = [

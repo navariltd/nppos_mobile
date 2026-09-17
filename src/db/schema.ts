@@ -143,7 +143,6 @@ export const agentStock = sqliteTable(
 		bomId: text('bom_id').references(() => boms.id),
 		onHand: integer('on_hand').notNull().default(0),
 		issuedToday: integer('issued_today').notNull().default(0),
-		damaged: integer('damaged').notNull().default(0),
 	},
 	(t) => [primaryKey({ columns: [t.warehouse, t.hamperId] })],
 );

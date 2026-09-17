@@ -90,7 +90,6 @@ interface FrappePull {
 		bom_id?: string | null;
 		on_hand: number;
 		issued_today: number;
-		damaged: number;
 	}[];
 	beneficiaries: {
 		id: string;
@@ -285,7 +284,6 @@ export class FrappeAdapter implements ApiAdapter {
 				bomId: s.bom_id || null,
 				onHand: s.on_hand,
 				issuedToday: s.issued_today,
-				damaged: s.damaged,
 			})),
 			beneficiaries: (m.beneficiaries ?? []).map((b) => ({
 				id: b.id,

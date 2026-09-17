@@ -153,7 +153,6 @@ export interface AgentStockRow {
 	bomId?: string | null; // the item's default BOM — what a unit contains
 	onHand: number;
 	issuedToday: number;
-	damaged: number;
 }
 
 export interface PosTransaction {

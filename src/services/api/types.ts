@@ -59,7 +59,7 @@ export type OutboxPayload =
 			posSession: string;
 	  }
 	| {
-			kind: 'stock_return' | 'stock_damaged';
+			kind: 'stock_return';
 			warehouse: string;
 			hamper: string;
 			qty: number;

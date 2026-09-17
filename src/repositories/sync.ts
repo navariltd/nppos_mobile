@@ -253,13 +253,7 @@ function pendingStockDeductions(): Map<string, number> {
 		} catch {
 			continue;
 		}
-		if (
-			p.kind !== 'goods_issue' &&
-			p.kind !== 'stock_return' &&
-			p.kind !== 'stock_damaged'
-		) {
-			continue;
-		}
+		if (p.kind !== 'goods_issue' && p.kind !== 'stock_return') continue;
 		const { warehouse, hamper, qty } = p;
 		if (!warehouse || !hamper || !qty) continue;
 		const key = `${warehouse} ${hamper}`;

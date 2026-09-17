@@ -320,14 +320,15 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 	return { ok: true, transactionId: id };
 }
 
-// ---- stock adjustments ---------------------------------------------------------
+// ---- stock returns ---------------------------------------------------------
 
-function adjustStock(
-	warehouse: string,
-	hamperId: string,
-	qty: number,
-	kind: 'return' | 'damaged',
-): MutationResult {
+// Send units back to the central warehouse. This is the ONLY stock adjustment
+// the POS makes: damaged or lost goods are deliberately out of scope — they go
+// through AIGT's procurement process (the collection point reports it and
+// procurement handles the replacement and any related costs), not through a
+// write-off here. A hamper is also rarely damaged as a whole; it is usually one
+// component, which this app has no way to express.
+export function returnStock(warehouse: string, hamperId: string, qty: number): MutationResult {
 	if (qty <= 0) return { ok: false, reason: 'Quantity must be at least 1.' };
 	const stock = db
 		.select()
@@ -349,10 +350,7 @@ function adjustStock(
 				id,
 				type: 'stock_return',
 				title: stock.hamperName,
-				subtitle:
-					kind === 'return'
-						? `Returned ${qty} to central warehouse`
-						: `${qty} written off — damaged/expired`,
+				subtitle: `Returned ${qty} to central warehouse`,
 				qty,
 				warehouse,
 				project: assignment?.project ?? 'General',
@@ -362,33 +360,18 @@ function adjustStock(
 			})
 			.run();
 		tx.update(agentStock)
-			.set({
-				onHand: sql`${agentStock.onHand} - ${qty}`,
-				...(kind === 'damaged' ? { damaged: sql`${agentStock.damaged} + ${qty}` } : {}),
-			})
+			.set({ onHand: sql`${agentStock.onHand} - ${qty}` })
 			.where(and(eq(agentStock.warehouse, warehouse), eq(agentStock.hamperId, hamperId)))
 			.run();
 		tx.insert(outbox)
 			.values({
 				id,
-				payload: JSON.stringify({ kind: `stock_${kind}`, warehouse, hamper: hamperId, qty }),
+				payload: JSON.stringify({ kind: 'stock_return', warehouse, hamper: hamperId, qty }),
 				createdAt: nowIso(),
 			})
 			.run();
 	});
 	return { ok: true, transactionId: id };
-}
-
-export function returnStock(warehouse: string, hamperId: string, qty: number): MutationResult {
-	return adjustStock(warehouse, hamperId, qty, 'return');
-}
-
-export function reportDamagedStock(
-	warehouse: string,
-	hamperId: string,
-	qty: number,
-): MutationResult {
-	return adjustStock(warehouse, hamperId, qty, 'damaged');
 }
 
 // ---- POS session (opening / closing entry) ---------------------------------------
