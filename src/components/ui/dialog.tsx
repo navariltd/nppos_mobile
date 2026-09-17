@@ -4,7 +4,14 @@ import { cn } from '@/lib/utils';
 import * as DialogPrimitive from '@rn-primitives/dialog';
 import { X } from 'lucide-react-native';
 import * as React from 'react';
-import { Platform, Text, View, type GestureResponderEvent, type ViewProps } from 'react-native';
+import {
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+  type GestureResponderEvent,
+  type ViewProps,
+} from 'react-native';
 import { FadeIn, FadeOut, ReduceMotion } from 'react-native-reanimated';
 import { FullWindowOverlay as RNFullWindowOverlay } from 'react-native-screens';
 
@@ -35,33 +42,46 @@ function DialogOverlay({
     }
   }
 
-  return (
-    <FullWindowOverlay>
+  if (Platform.OS === 'web') {
+    return (
       <DialogPrimitive.Overlay
         className={cn(
-          'absolute bottom-0 left-0 right-0 top-0 flex items-center justify-center bg-black/50 p-2',
-          Platform.select({
-            web: 'animate-in fade-in-0 fixed cursor-default [&>*]:cursor-auto',
-          }),
+          'animate-in fade-in-0 fixed bottom-0 left-0 right-0 top-0 flex cursor-default items-center justify-center bg-black/50 p-2 [&>*]:cursor-auto',
           className
         )}
         {...props}
-        onPress={Platform.select({ web: onOverlayPress, native: onPress })}
-        asChild={Platform.OS !== 'web'}>
-        <NativeOnlyAnimatedView
-          entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
-          exiting={FadeOut.duration(150).reduceMotion(ReduceMotion.System)}
-          as="Pressable">
-          <NativeOnlyAnimatedView
-            entering={FadeIn.delay(50).reduceMotion(ReduceMotion.System)}
-            exiting={FadeOut.duration(150).reduceMotion(ReduceMotion.System)}>
-            <>{children}</>
-          </NativeOnlyAnimatedView>
-        </NativeOnlyAnimatedView>
+        onPress={onOverlayPress}>
+        <>{children}</>
       </DialogPrimitive.Overlay>
+    );
+  }
+
+  // Native: the tap-to-close backdrop is a SIBLING behind the content, never its
+  // parent. The stock reusables layout nests the content inside the backdrop
+  // Pressable, and the Pressable's touch handling steals drags from any
+  // ScrollView in the dialog body on Android (long lists wouldn't scroll).
+  // Taps on the content can't reach a sibling, so nothing needs to swallow them.
+  return (
+    <FullWindowOverlay>
+      <NativeOnlyAnimatedView
+        entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
+        exiting={FadeOut.duration(150).reduceMotion(ReduceMotion.System)}
+        pointerEvents="box-none"
+        style={[StyleSheet.absoluteFill, styles.center]}>
+        <DialogPrimitive.Overlay
+          className={cn('absolute bottom-0 left-0 right-0 top-0 bg-black/50', className)}
+          {...props}
+          onPress={onPress}
+        />
+        {children}
+      </NativeOnlyAnimatedView>
     </FullWindowOverlay>
   );
 }
+
+const styles = StyleSheet.create({
+  center: { alignItems: 'center', justifyContent: 'center', padding: 8 },
+});
 function DialogContent({
   className,
   portalHost,
@@ -75,12 +95,16 @@ function DialogContent({
       <DialogOverlay>
         <DialogPrimitive.Content
           className={cn(
-            'bg-background border-border z-50 mx-auto flex w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
+            'bg-background border-border z-50 mx-auto flex max-h-[85%] w-full max-w-[calc(100%-2rem)] flex-col gap-4 rounded-lg border p-6 shadow-lg shadow-black/5 sm:max-w-lg',
             Platform.select({
               web: 'animate-in fade-in-0 zoom-in-95 duration-200',
             }),
             className
           )}
+          // The primitive claims every touch on the content so it can't bubble
+          // to a parent backdrop. Ours is a sibling (see DialogOverlay), and
+          // claiming here would starve scrollables inside the body.
+          onStartShouldSetResponder={undefined}
           {...props}>
           <>{children}</>
           <DialogPrimitive.Close

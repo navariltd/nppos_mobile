@@ -19,7 +19,7 @@ import { Text } from '@/components/ui/text';
 import { useHamperContents } from '@/repositories';
 import { PackageOpen } from 'lucide-react-native';
 import * as React from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, useWindowDimensions, View } from 'react-native';
 
 // Trailing zeros look wrong on a packing list ("10 kg", not "10.0 kg").
 function qtyText(n: number): string {
@@ -45,6 +45,13 @@ export function HamperContentsDialog({
 	const contents = useHamperContents(bomId, hamperId);
 	const showTotals = multiplier > 1;
 
+	// The list gets a slice of the actual viewport rather than a fixed 320: a
+	// hamper with many components needs the room on a big phone, and on a small
+	// one a fixed height pushes the dialog's own footer off-screen — which reads
+	// as "it doesn't scroll" even though the list itself does.
+	const { height: windowHeight } = useWindowDimensions();
+	const listMaxHeight = Math.max(180, Math.round(windowHeight * 0.45));
+
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-w-[92%]">
@@ -52,18 +59,25 @@ export function HamperContentsDialog({
 					<DialogTitle>{title}</DialogTitle>
 					<DialogDescription>
 						{contents
-							? showTotals
-								? `Contents of one hamper — totals shown for ${multiplier}.`
-								: 'Contents of one hamper.'
+							? `${contents.lines.length} item${contents.lines.length === 1 ? '' : 's'} in one hamper${
+									showTotals ? ` — totals shown for ${multiplier}.` : '.'
+								}`
 							: 'No component list has been synced for this hamper yet.'}
 					</DialogDescription>
 				</DialogHeader>
 
 				{contents ? (
 					<>
+						{/* nestedScrollEnabled: the dialog overlay renders as a Pressable
+						    (see ui/dialog.tsx), and on Android a scrollable inside a
+						    touch-handling parent needs this to claim the drag. The
+						    indicator stays VISIBLE here — a clipped list with no
+						    indicator is indistinguishable from a truncated one. */}
 						<ScrollView
-							style={{ maxHeight: 320 }}
-							showsVerticalScrollIndicator={false}
+							style={{ maxHeight: listMaxHeight, flexShrink: 1 }}
+							nestedScrollEnabled
+							showsVerticalScrollIndicator
+							persistentScrollbar
 							contentContainerClassName="gap-2.5"
 						>
 							{contents.lines.map((line, i) => (

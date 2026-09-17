@@ -9,15 +9,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { AtSign, Eye, EyeOff, LockKeyhole } from 'lucide-react-native';
 import * as React from 'react';
-import {
-	Alert,
-	Image,
-	KeyboardAvoidingView,
-	Platform,
-	Pressable,
-	ScrollView,
-	View,
-} from 'react-native';
+import { Alert, Image, Pressable, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -42,18 +35,13 @@ export default function Login() {
 		<View className="bg-primary flex-1">
 			<StatusBar style="light" />
 			<SafeAreaView edges={['top']} className="flex-1">
-				<KeyboardAvoidingView
-					behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+				<KeyboardAwareScrollView
 					className="flex-1"
+					contentContainerClassName="flex-grow"
+					keyboardShouldPersistTaps="handled"
+					showsVerticalScrollIndicator={false}
+					bottomOffset={96}
 				>
-					{/* Scrolls when the keyboard compresses the viewport;
-					    persistTaps so "Sign in" works in one tap with the keyboard up. */}
-					<ScrollView
-						contentContainerClassName="flex-grow"
-						keyboardShouldPersistTaps="handled"
-						showsVerticalScrollIndicator={false}
-						bounces={false}
-					>
 					{/* Canopy hero */}
 					<View className="items-center gap-4 px-6 pb-10 pt-12">
 						<Animated.View
@@ -159,8 +147,7 @@ export default function Login() {
 							</Button>
 						</View>
 					</Animated.View>
-					</ScrollView>
-				</KeyboardAvoidingView>
+				</KeyboardAwareScrollView>
 			</SafeAreaView>
 		</View>
 	);

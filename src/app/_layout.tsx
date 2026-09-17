@@ -17,6 +17,7 @@ import { PortalHost } from '@rn-primitives/portal';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 export {
@@ -74,18 +75,20 @@ export default function RootLayout() {
 
 	return (
 		<SafeAreaProvider>
-			<StoreProvider>
-				<DbProvider>
-					<ThemeModeProvider>
-						{/* below DbProvider — the sync engine reads SQLite */}
-						<SyncManager />
-						{/* Animated splash → first-run onboarding → app */}
-						<BootSequence>
-							<RootNavigator />
-						</BootSequence>
-					</ThemeModeProvider>
-				</DbProvider>
-			</StoreProvider>
+			<KeyboardProvider>
+				<StoreProvider>
+					<DbProvider>
+						<ThemeModeProvider>
+							{/* below DbProvider — the sync engine reads SQLite */}
+							<SyncManager />
+							{/* Animated splash → first-run onboarding → app */}
+							<BootSequence>
+								<RootNavigator />
+							</BootSequence>
+						</ThemeModeProvider>
+					</DbProvider>
+				</StoreProvider>
+			</KeyboardProvider>
 		</SafeAreaProvider>
 	);
 }
