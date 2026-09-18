@@ -15,8 +15,13 @@
 // So all three demand connectivity, a full outbox flush, a fresh pull, and an
 // empty queue afterwards. Anything left pending means something was refused or
 // the link died mid-flush — either way the agent stays where they are.
+//
+// The flush is FORCED: a queued item still inside its retry backoff is pushed
+// now rather than after the timer. Backoff is there to pace background retries,
+// and honouring it here would leave an agent unable to close their shift for up
+// to ten minutes with nothing on screen explaining the wait.
 
-import { pendingOutboxCount } from '@/repositories';
+import { pendingOutboxSummary } from '@/repositories';
 import type { AppDispatch } from '@/store';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import * as React from 'react';
@@ -34,11 +39,16 @@ const MAX_ATTEMPTS = 4;
  * refusal arrives as a ConditionError — which is NOT a failure, just "someone
  * else is already doing it". Retry until the in-flight run clears; any real
  * error (offline, transport, server) is thrown to the caller.
+ *
+ * Forces the outbox by default: every caller here is a person waiting on the
+ * queue to empty, so an item still inside its retry backoff must be attempted
+ * now rather than blocking the shift boundary until a timer nobody can see
+ * expires. Pass `false` for a flush that should respect the backoff.
  */
-export async function flushNow(dispatch: AppDispatch): Promise<SyncResult> {
+export async function flushNow(dispatch: AppDispatch, force = true): Promise<SyncResult> {
 	for (let attempt = 1; ; attempt++) {
 		try {
-			return await dispatch(syncNow()).unwrap();
+			return await dispatch(syncNow({ force })).unwrap();
 		} catch (e) {
 			const skipped = (e as { name?: string })?.name === 'ConditionError';
 			if (!skipped || attempt >= MAX_ATTEMPTS) throw e;
@@ -72,13 +82,17 @@ export async function runShiftPreflight(
 		};
 	}
 
-	const left = pendingOutboxCount();
-	if (left > 0) {
+	// The flush above forced every queued item, backoff included, so anything
+	// still here was just attempted and failed again — say what went wrong
+	// rather than leaving the agent to guess at an invisible queue.
+	const { count, lastError } = pendingOutboxSummary();
+	if (count > 0) {
+		const what = `${count} transaction${count === 1 ? '' : 's'} still waiting to sync`;
 		return {
 			ok: false,
-			reason: `${left} transaction${left === 1 ? '' : 's'} still waiting to sync. Clear ${
-				left === 1 ? 'it' : 'them'
-			} before you ${action}.`,
+			reason: lastError
+				? `${what} — ${lastError} Clear ${count === 1 ? 'it' : 'them'} before you ${action}.`
+				: `${what}. Clear ${count === 1 ? 'it' : 'them'} before you ${action}.`,
 		};
 	}
 	return { ok: true };

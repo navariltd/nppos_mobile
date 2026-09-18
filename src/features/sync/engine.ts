@@ -9,6 +9,11 @@
 //               queue row cleared, never auto-retried
 // - throw     → attempt++/backoff on the item and the flush STOPS — FIFO order
 //               is preserved so dependent records never leapfrog a failure.
+//
+// That backoff paces the BACKGROUND triggers only. A user-initiated sync passes
+// { force: true } and retries everything queued immediately, because the person
+// asking is the one being blocked by the wait (closing a shift and signing out
+// both require an empty outbox).
 
 import {
 	applyPull,
@@ -37,12 +42,20 @@ function errorMessage(e: unknown): string {
 	return (e as { message?: string })?.message || 'Sync failed.';
 }
 
-export const syncNow = createAsyncThunk<SyncResult, void>(
+export interface SyncOptions {
+	// Retry every queued item now, ignoring the backoff a previous failure set.
+	// For user-initiated syncs only (the "Sync now" button, shift boundaries) —
+	// background triggers must keep honouring the backoff.
+	force?: boolean;
+}
+
+export const syncNow = createAsyncThunk<SyncResult, SyncOptions | void>(
 	'sync/syncNow',
-	async (_, { dispatch, getState }) => {
+	async (options, { dispatch, getState }) => {
 		if (!selectIsOnline(getState() as StateWithSync)) {
 			throw new Error('Offline — cannot sync.');
 		}
+		const force = !!options?.force;
 		dispatch(syncStarted());
 		try {
 			const api = getApi();
@@ -51,7 +64,7 @@ export const syncNow = createAsyncThunk<SyncResult, void>(
 
 			// ---- push (outbox FIFO) ----
 			flush: while (true) {
-				const batch = getOutboxBatch();
+				const batch = getOutboxBatch(50, force);
 				if (batch.length === 0) break;
 				for (const item of batch) {
 					try {

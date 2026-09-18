@@ -113,7 +113,7 @@ export default function SelectProfile() {
 							<Button
 								variant="secondary"
 								className="mt-1 w-full"
-								onPress={() => dispatch(syncNow())}
+								onPress={() => dispatch(syncNow({ force: true }))}
 								disabled={isSyncing || !isOnline}
 							>
 								{isSyncing ? (

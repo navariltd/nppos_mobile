@@ -116,6 +116,20 @@ export function pendingOutboxCount(): number {
 	return db.select({ id: outbox.id }).from(outbox).all().length;
 }
 
+// What is still queued, and why the oldest item last failed. The preflight
+// refuses a shift boundary on the count alone; without the reason the agent is
+// told to "clear it" with no way of knowing what is wrong, and the error only
+// exists in the outbox row nobody can see.
+export function pendingOutboxSummary(): { count: number; lastError?: string } {
+	const rows = db
+		.select({ lastError: outbox.lastError })
+		.from(outbox)
+		.orderBy(asc(outbox.createdAt))
+		.all();
+	const firstError = rows.find((r) => !!r.lastError)?.lastError;
+	return { count: rows.length, lastError: firstError ?? undefined };
+}
+
 // Session references must leave the device as the POS Opening Entry's server
 // name — the backend resolves them as document names.
 //
@@ -150,12 +164,20 @@ function resolveSessionRefs(payload: OutboxPayload): OutboxPayload {
 }
 
 // FIFO batch of items due for a push (never-retried or past their backoff).
-export function getOutboxBatch(limit = 50): OutboxItem[] {
+//
+// `includeBackedOff` ignores the backoff and takes everything queued. Backoff
+// exists to stop BACKGROUND triggers from hammering a server that just failed;
+// it must never sit between the agent and their own work. A person who taps
+// "Sync now", or who is trying to close a shift (both of which refuse to
+// proceed while the outbox is non-empty), is asking for exactly this item to go
+// now — making them wait out a timer they cannot see is a dead end.
+export function getOutboxBatch(limit = 50, includeBackedOff = false): OutboxItem[] {
 	const now = nowIso();
+	const due = or(isNull(outbox.nextRetryAt), lte(outbox.nextRetryAt, now));
 	return db
 		.select()
 		.from(outbox)
-		.where(or(isNull(outbox.nextRetryAt), lte(outbox.nextRetryAt, now)))
+		.where(includeBackedOff ? undefined : due)
 		.orderBy(asc(outbox.createdAt))
 		.limit(limit)
 		.all()

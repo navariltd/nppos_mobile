@@ -233,7 +233,9 @@ export default function Profile() {
 							}
 							if (isSyncing) return;
 							try {
-								const r = await dispatch(syncNow()).unwrap();
+								// Explicit user action: retry everything queued, including
+								// items still inside the backoff a previous failure set.
+								const r = await dispatch(syncNow({ force: true })).unwrap();
 								Alert.alert(
 									'Sync',
 									r.pushed + r.conflicts === 0
