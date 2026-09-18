@@ -23,6 +23,14 @@ bank accounts), **Territory/District** (location), **AIGT HDR Settings** (single
 doc holding per-company GL accounts: agent accounts, beneficiary accounts, bank
 charges accounts).
 
+**AIGT HDR Settings also configures this app.** Its **POS App** tab holds the
+mobile POS's behaviour — offline limit, on-device transaction retention, whether
+scans open spent vouchers, the per-voucher use limits, what the agent is shown,
+and whether the close-out photo is mandatory. The fields are all prefixed
+`pos_`; `nppos/sync_settings.py` reads them (guarded, since nppos does not
+depend on aigt_hdr) and every `sync_pull` sends the whole object to the device.
+The field list and defaults are in `docs/NPPOS_WEB.md` §delta pull.
+
 ### Entitlement Voucher / Entitlement Redemption → separate app
 
 These two doctypes live in the **nppos** Frappe app (the web POS), *not* in
