@@ -4,9 +4,11 @@ import { ActionTile, ListRow, SectionLabel } from '@/components/domain/widgets';
 import { Card } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { syncNow } from '@/features/sync/engine';
 import { useSession } from '@/hooks/session';
 import { useActivePosProfile } from '@/hooks/pos-profile';
-import { useSyncCounts } from '@/repositories';
+import { staleSyncMessage, useSyncCounts, useSyncFreshness } from '@/repositories';
+import { useAppDispatch } from '@/store/hooks';
 import { useIsFocused } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
@@ -14,6 +16,7 @@ import {
 	ChevronRight,
 	CircleAlert,
 	ClipboardCheck,
+	CloudOff,
 	CreditCard,
 	RefreshCw,
 	Search,
@@ -30,6 +33,10 @@ export default function Dashboard() {
 	const { role, agent } = useSession();
 	const profile = useActivePosProfile();
 	const { pending, conflicts } = useSyncCounts();
+	const dispatch = useAppDispatch();
+	// Setting 1: past the configured offline limit the device stops recording
+	// new work until it syncs, so say so where the agent starts their day.
+	const freshness = useSyncFreshness();
 
 	// The ACTIVE profile's warehouse identifies the working context and must win:
 	// agent.code is fixed at login (one arbitrary profile's warehouse) and would
@@ -70,6 +77,27 @@ export default function Dashboard() {
 					<Animated.View entering={FadeInDown.duration(350)}>
 						<PosSessionCard />
 					</Animated.View>
+
+					{/* Offline too long — redemptions are blocked until a sync lands */}
+					{freshness.isStale && (
+						<Animated.View entering={FadeInDown.duration(350).delay(40)}>
+							<Pressable
+								onPress={() => {
+									dispatch(syncNow({ force: true }))
+										.unwrap()
+										.catch(() => {});
+								}}
+								className="bg-warning/10 flex-row items-center gap-2.5 rounded-xl px-4 py-3 active:opacity-70"
+							>
+								<Icon as={CloudOff} size={18} className="text-warning" />
+								<View className="flex-1">
+									<Text className="text-warning text-sm font-medium">Sync required</Text>
+									<Text className="text-warning/90 text-xs">{staleSyncMessage(freshness)}</Text>
+								</View>
+								<Icon as={RefreshCw} size={18} className="text-warning" />
+							</Pressable>
+						</Animated.View>
+					)}
 
 					{/* Needs-review banner */}
 					{conflicts > 0 && (

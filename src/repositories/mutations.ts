@@ -6,7 +6,8 @@
 // The app mirrors the nppos web POS: a voucher carries its entitlement inline
 // (Cash|Goods) and each redemption maps to one Entitlement Redemption. Agents may
 // redeem LESS than the voucher's cash amount / goods qty (partial redemption),
-// across the 2 allowed uses.
+// across the configured allowed uses (AIGT HDR Settings › POS App — cash
+// defaults to 2, goods to 1; the same numbers the backend enforces at submit).
 
 import { db } from '@/db/client';
 import {
@@ -20,9 +21,11 @@ import {
 	voucherRedemptions,
 	vouchers,
 } from '@/db/schema';
+import { maxUsesFor } from '@/lib/pos-settings';
 import { uuid } from '@/lib/uuid';
 import type { ClosingPhoto } from '@/services/api';
 import { and, eq, sql } from 'drizzle-orm';
+import { getSettings, staleSyncMessage, syncFreshness } from './settings';
 
 export type MutationResult = { ok: true; transactionId: string } | { ok: false; reason: string };
 
@@ -74,6 +77,14 @@ function requireOpenSession():
 		.where(eq(posProfiles.id, session.posProfileId))
 		.get();
 	if (!profile) return { error: 'POS profile for this session not found.' };
+
+	// A device that has been out of contact past the configured limit is working
+	// from voucher state nobody has verified since. Distribution stays offline-
+	// first (AGENTS.md rule 2), but not indefinitely — the limit is set on the
+	// desk and 0 switches the rule off entirely.
+	const freshness = syncFreshness();
+	if (freshness.isStale) return { error: staleSyncMessage(freshness) };
+
 	return { session, openingEntry: session.openingServerName, profile };
 }
 
@@ -106,8 +117,11 @@ function loadVoucherForRedeem(voucherId: string, sessionWarehouse: string): Vouc
 					: 'Voucher is outside its validity window.',
 		} as const;
 	}
-	if (voucher.usesCount >= voucher.maxUses) {
-		return { error: `Voucher has reached its ${voucher.maxUses}-use limit.` } as const;
+	// The limit is configuration (AIGT HDR Settings › POS App), read fresh at
+	// redemption time — the same number the backend re-checks at submit.
+	const maxUses = maxUsesFor(voucher, getSettings());
+	if (voucher.usesCount >= maxUses) {
+		return { error: `Voucher has reached its ${maxUses}-use limit.` } as const;
 	}
 	// Only enforce the bounds that are actually set — the backend leaves
 	// valid_from/valid_to blank ('') on open-ended vouchers, and '' must not read
@@ -128,11 +142,14 @@ function loadVoucherForRedeem(voucherId: string, sessionWarehouse: string): Vouc
 }
 
 // Voucher status after a redemption: fully drawn OR uses exhausted → redeemed.
+// `maxUses` is the configured limit for this voucher's type, passed in so the
+// caller and this function can never disagree about which number applies.
 function nextVoucherStatus(
 	voucher: typeof vouchers.$inferSelect,
 	fullyDrawn: boolean,
+	maxUses: number,
 ): 'redeemed' | 'partially_redeemed' {
-	const usesExhausted = voucher.usesCount + 1 >= voucher.maxUses;
+	const usesExhausted = voucher.usesCount + 1 >= maxUses;
 	return fullyDrawn || usesExhausted ? 'redeemed' : 'partially_redeemed';
 }
 
@@ -157,6 +174,7 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 	}
 
 	const fullyDrawn = voucher.redeemedAmount + amount >= voucher.amount;
+	const maxUses = maxUsesFor(voucher, getSettings());
 	const id = uuid();
 	db.transaction((tx) => {
 		tx.insert(posTransactions)
@@ -193,7 +211,7 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 			.set({
 				redeemedAmount: voucher.redeemedAmount + amount,
 				usesCount: voucher.usesCount + 1,
-				status: nextVoucherStatus(voucher, fullyDrawn),
+				status: nextVoucherStatus(voucher, fullyDrawn, maxUses),
 			})
 			.where(eq(vouchers.id, voucher.id))
 			.run();
@@ -248,6 +266,7 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 	const hamper = db.select().from(hampers).where(eq(hampers.id, voucher.hamperId)).get();
 
 	const fullyDrawn = voucher.redeemedQty + qty >= totalQty;
+	const maxUses = maxUsesFor(voucher, getSettings());
 	const id = uuid();
 	db.transaction((tx) => {
 		tx.insert(posTransactions)
@@ -297,7 +316,7 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 			.set({
 				redeemedQty: voucher.redeemedQty + qty,
 				usesCount: voucher.usesCount + 1,
-				status: nextVoucherStatus(voucher, fullyDrawn),
+				status: nextVoucherStatus(voucher, fullyDrawn, maxUses),
 			})
 			.where(eq(vouchers.id, voucher.id))
 			.run();
@@ -330,6 +349,10 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 // component, which this app has no way to express.
 export function returnStock(warehouse: string, hamperId: string, qty: number): MutationResult {
 	if (qty <= 0) return { ok: false, reason: 'Quantity must be at least 1.' };
+	// Same offline limit as a redemption: a return moves stock the backend has
+	// not confirmed since the device last synced.
+	const freshness = syncFreshness();
+	if (freshness.isStale) return { ok: false, reason: staleSyncMessage(freshness) };
 	const stock = db
 		.select()
 		.from(agentStock)
@@ -470,6 +493,13 @@ export function discardUnsyncedPosSession(sessionId: string): MutationResult {
 export function closePosSession(photo?: ClosingPhoto & { uri: string }): MutationResult {
 	const session = getOpenSession();
 	if (!session) return { ok: false, reason: 'No open session to close.' };
+	// The photo is proof of distribution; where a programme requires it, a shift
+	// cannot be sealed without one (AIGT HDR Settings › POS App). Enforced here
+	// rather than server-side: rejecting the push would strand a locally closed
+	// shift with no closing entry, which is worse than a missing photo.
+	if (getSettings().requireCloseOutPhoto && !photo) {
+		return { ok: false, reason: 'A close-out photo is required to close this session.' };
+	}
 
 	const closeId = uuid();
 	db.transaction((tx) => {

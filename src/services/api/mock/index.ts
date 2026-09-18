@@ -8,6 +8,7 @@
 // lands, pull() becomes the real delta feed and the seed goes away.
 
 import { currentAgent, posProfiles } from '@/data/mock';
+import { DEFAULT_SETTINGS } from '@/lib/pos-settings';
 import type {
 	ApiAdapter,
 	LoginRequest,
@@ -107,6 +108,7 @@ export class MockAdapter implements ApiAdapter {
 			agentStock: [],
 			posProfiles: [],
 			beneficiaries: [],
+			settings: { ...DEFAULT_SETTINGS },
 			cursors: {
 				assignments: now,
 				vouchers: now,

@@ -11,9 +11,11 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
+import { isVoucherHiddenFromScan, maxUsesFor } from '@/lib/pos-settings';
 import {
 	findVoucherByNo,
 	useBeneficiaryNames,
+	useSettings,
 	useVoucherSearchByNo,
 	useVouchersByBeneficiaryNo,
 } from '@/repositories';
@@ -38,6 +40,7 @@ export default function VoucherSearch() {
 	const [scanning, setScanning] = React.useState(false);
 
 	const profile = useActivePosProfile();
+	const settings = useSettings();
 
 	const single = useVoucherSearchByNo(submitted?.mode === 'voucher' ? submitted.q : undefined);
 	// Browsing a beneficiary's vouchers is scoped to the warehouse being worked;
@@ -75,7 +78,11 @@ export default function VoucherSearch() {
 		setQ(voucherNo);
 		setSubmitted({ mode: 'voucher', q: voucherNo });
 		const match = findVoucherByNo(voucherNo);
-		if (match) router.push(`/vouchers/${match.voucherNo}`);
+		// Setting 3: a spent voucher may not be opened — the result area says
+		// "already redeemed" instead of showing its details.
+		if (match && !isVoucherHiddenFromScan(match, settings)) {
+			router.push(`/vouchers/${match.voucherNo}`);
+		}
 	};
 
 	return (
@@ -143,6 +150,12 @@ export default function VoucherSearch() {
 						title="Search a voucher"
 						subtitle="Scan the voucher QR, or type a voucher/beneficiary number"
 					/>
+				) : submitted.mode === 'voucher' && single && isVoucherHiddenFromScan(single, settings) ? (
+					<EmptyState
+						icon={Ticket}
+						title="Already redeemed"
+						subtitle={`${single.voucherNo} has been fully redeemed.`}
+					/>
 				) : results.length === 0 ? (
 					<EmptyState
 						icon={SearchX}
@@ -157,7 +170,12 @@ export default function VoucherSearch() {
 					<ScrollView showsVerticalScrollIndicator={false} contentContainerClassName="pb-2">
 						{results.map((v, i) => {
 							const spent = !isRedeemable(v.status);
-							const who = v.beneficiaryNo ? (names[v.beneficiaryNo] ?? v.beneficiaryNo) : null;
+							// Setting 6: the name is withheld where details are hidden.
+							const who = v.beneficiaryNo
+								? settings.showBeneficiaryDetails
+									? (names[v.beneficiaryNo] ?? v.beneficiaryNo)
+									: v.beneficiaryNo
+								: null;
 							return (
 								<Animated.View
 									key={v.id}
@@ -169,7 +187,7 @@ export default function VoucherSearch() {
 										subtitle={[
 											who,
 											v.entitlementType === 'cash' ? format(v.amount) : 'Hamper',
-											`${v.usesCount}/${v.maxUses} uses`,
+											`${v.usesCount}/${maxUsesFor(v, settings)} uses`,
 										]
 											.filter(Boolean)
 											.join(' · ')}

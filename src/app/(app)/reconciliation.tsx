@@ -33,6 +33,7 @@ import {
 	useAgentStock,
 	useOpenPosSession,
 	useSessionTransactions,
+	useSettings,
 	useSyncCounts,
 } from '@/repositories';
 import { useAppDispatch } from '@/store/hooks';
@@ -60,6 +61,9 @@ export default function Reconciliation() {
 	const transactions = useSessionTransactions(session?.id);
 	const preflight = useShiftPreflight();
 	const { format } = useCurrency();
+	// Setting 7: some programmes require the signed sheet before a shift can be
+	// sealed. closePosSession() refuses without it; this is the UI half.
+	const photoRequired = useSettings().requireCloseOutPhoto;
 	const [photo, setPhoto] = React.useState<CapturedPhoto | null>(null);
 
 	const attach = async (capture: () => Promise<CaptureResult>) => {
@@ -213,10 +217,13 @@ export default function Reconciliation() {
 						</Card>
 					</Animated.View>
 
-					{/* Proof of distribution — optional. Some points collect a signed
-					    sheet or fingerprints; photographing it here attaches it to the
-					    POS Closing Entry so the paper record and the ledger match. */}
-					<SectionLabel>Close-out photo (optional)</SectionLabel>
+					{/* Proof of distribution — optional unless the POS App setting makes
+					    it mandatory. Some points collect a signed sheet or fingerprints;
+					    photographing it here attaches it to the POS Closing Entry so the
+					    paper record and the ledger match. */}
+					<SectionLabel>
+						{`Close-out photo (${photoRequired ? 'required' : 'optional'})`}
+					</SectionLabel>
 					<Animated.View entering={FadeInDown.duration(300).delay(200)}>
 						<Card>
 							<CardContent className="gap-3 pt-5">
@@ -249,6 +256,7 @@ export default function Reconciliation() {
 								) : (
 									<Text className="text-muted-foreground text-sm">
 										Attach the signed sheet or fingerprint slip taken at this point.
+										{photoRequired ? ' Required before the session can be closed.' : ''}
 									</Text>
 								)}
 								<View className="flex-row gap-2">
@@ -290,7 +298,12 @@ export default function Reconciliation() {
 					<Animated.View entering={FadeInDown.duration(300).delay(240)}>
 						<AlertDialog>
 							<AlertDialogTrigger asChild>
-								<Button size="lg" disabled={!preflight.isOnline || preflight.isRunning}>
+								<Button
+									size="lg"
+									disabled={
+										!preflight.isOnline || preflight.isRunning || (photoRequired && !photo)
+									}
+								>
 									<Icon as={ClipboardCheck} size={20} className="text-primary-foreground" />
 									<Text>
 										{preflight.isRunning ? 'Syncing…' : 'Close session & submit'}

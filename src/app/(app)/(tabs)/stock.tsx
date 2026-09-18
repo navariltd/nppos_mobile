@@ -19,7 +19,13 @@ import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Text } from '@/components/ui/text';
 import { useActivePosProfile } from '@/hooks/pos-profile';
-import { returnStock, useAgentStock } from '@/repositories';
+import {
+	returnStock,
+	staleSyncMessage,
+	useAgentStock,
+	useSettings,
+	useSyncFreshness,
+} from '@/repositories';
 import type { AgentStockRow } from '@/types/domain';
 import { ChevronRight, PackageOpen, Undo2 } from 'lucide-react-native';
 import * as React from 'react';
@@ -32,6 +38,11 @@ type Adjust = { row: AgentStockRow };
 export default function Stock() {
 	const profile = useActivePosProfile();
 	const agentStock = useAgentStock(profile?.warehouse);
+	const settings = useSettings();
+	const freshness = useSyncFreshness();
+	// Setting 5: without it, a stock line names its hamper but offers no way
+	// into the component list.
+	const canPeek = settings.showHamperContents;
 	const [adjust, setAdjust] = React.useState<Adjust | null>(null);
 	const [qty, setQty] = React.useState('1');
 	const [contentsOf, setContentsOf] = React.useState<AgentStockRow | null>(null);
@@ -61,6 +72,11 @@ export default function Stock() {
 				<Text className="text-muted-foreground mt-0.5 text-sm">
 					{profile ? `${profile.warehouse} · ${profile.name}` : 'no active POS profile'}
 				</Text>
+				{/* The returns below are disabled while stale — say why, or the
+				    greyed-out button reads as a bug. */}
+				{freshness.isStale && (
+					<Text className="text-warning mt-2 text-xs">{staleSyncMessage(freshness)}</Text>
+				)}
 			</View>
 
 			<FadeInView>
@@ -86,12 +102,16 @@ export default function Stock() {
 				<FadeInView key={row.hamperId} delay={80 + i * 70}>
 					<Card>
 						{/* Tapping a stock line shows what one unit contains (its default
-						    BOM) — the same list the agent sees when redeeming. */}
+						    BOM) — the same list the agent sees when redeeming. Inert when
+						    hamper contents are switched off. */}
 						<Pressable
-							onPress={() => setContentsOf(row)}
-							accessibilityRole="button"
-							accessibilityLabel={`Show contents of ${row.hamperName}`}
-							className="active:bg-accent/40 rounded-t-xl"
+							onPress={canPeek ? () => setContentsOf(row) : undefined}
+							disabled={!canPeek}
+							accessibilityRole={canPeek ? 'button' : undefined}
+							accessibilityLabel={
+								canPeek ? `Show contents of ${row.hamperName}` : undefined
+							}
+							className={canPeek ? 'active:bg-accent/40 rounded-t-xl' : undefined}
 						>
 							<CardHeader>
 								<View className="flex-row items-center justify-between gap-2">
@@ -102,11 +122,13 @@ export default function Stock() {
 										<Text>{row.hamperId}</Text>
 									</Badge>
 								</View>
-								<View className="mt-1 flex-row items-center gap-1.5">
-									<Icon as={PackageOpen} size={13} className="text-primary" />
-									<Text className="text-primary flex-1 text-xs">What's in this hamper</Text>
-									<Icon as={ChevronRight} size={14} className="text-muted-foreground" />
-								</View>
+								{canPeek && (
+									<View className="mt-1 flex-row items-center gap-1.5">
+										<Icon as={PackageOpen} size={13} className="text-primary" />
+										<Text className="text-primary flex-1 text-xs">What's in this hamper</Text>
+										<Icon as={ChevronRight} size={14} className="text-muted-foreground" />
+									</View>
+								)}
 							</CardHeader>
 						</Pressable>
 						<CardContent className="gap-3">
@@ -118,6 +140,7 @@ export default function Stock() {
 							<Button
 								variant="outline"
 								size="sm"
+								disabled={freshness.isStale}
 								onPress={() => open(row)}
 							>
 								<Icon as={Undo2} size={16} className="text-foreground" />
@@ -128,13 +151,15 @@ export default function Stock() {
 				</FadeInView>
 			))}
 
-			<HamperContentsDialog
-				open={contentsOf !== null}
-				onOpenChange={(o) => !o && setContentsOf(null)}
-				title={contentsOf?.hamperName ?? ''}
-				bomId={contentsOf?.bomId}
-				hamperId={contentsOf?.hamperId}
-			/>
+			{canPeek && (
+				<HamperContentsDialog
+					open={contentsOf !== null}
+					onOpenChange={(o) => !o && setContentsOf(null)}
+					title={contentsOf?.hamperName ?? ''}
+					bomId={contentsOf?.bomId}
+					hamperId={contentsOf?.hamperId}
+				/>
+			)}
 
 			<AlertDialog open={adjust !== null} onOpenChange={(o) => !o && setAdjust(null)}>
 				<AlertDialogContent>

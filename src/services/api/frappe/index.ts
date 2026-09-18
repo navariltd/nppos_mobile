@@ -13,6 +13,7 @@
 // Selected automatically by src/services/api/index.ts when
 // EXPO_PUBLIC_FRAPPE_URL is set; MockAdapter otherwise.
 
+import { DEFAULT_SETTINGS } from '@/lib/pos-settings';
 import type {
 	ApiAdapter,
 	LoginRequest,
@@ -108,6 +109,16 @@ interface FrappePull {
 		warehouse: string;
 		currency: string;
 	}[];
+	pos_settings?: {
+		max_offline_hours: number;
+		transaction_retention: number;
+		show_redeemed_vouchers: number; // Frappe Check: 0 | 1
+		max_uses_cash: number;
+		max_uses_goods: number;
+		show_hamper_contents: number;
+		show_beneficiary_details: number;
+		require_close_out_photo: number;
+	};
 	cursors: Record<PullCollection, string>;
 }
 
@@ -302,6 +313,18 @@ export class FrappeAdapter implements ApiAdapter {
 				warehouse: p.warehouse,
 				currency: p.currency,
 			})),
+			settings: m.pos_settings
+				? {
+						maxOfflineHours: m.pos_settings.max_offline_hours,
+						transactionRetention: m.pos_settings.transaction_retention,
+						showRedeemedVouchers: !!m.pos_settings.show_redeemed_vouchers,
+						maxUsesCash: m.pos_settings.max_uses_cash,
+						maxUsesGoods: m.pos_settings.max_uses_goods,
+						showHamperContents: !!m.pos_settings.show_hamper_contents,
+						showBeneficiaryDetails: !!m.pos_settings.show_beneficiary_details,
+						requireCloseOutPhoto: !!m.pos_settings.require_close_out_photo,
+					}
+				: { ...DEFAULT_SETTINGS },
 			cursors: m.cursors,
 		};
 	}

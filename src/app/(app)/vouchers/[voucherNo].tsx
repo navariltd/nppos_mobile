@@ -21,15 +21,19 @@ import { Text } from '@/components/ui/text';
 import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { formatDate } from '@/lib/format';
+import { isVoucherHiddenFromScan, maxUsesFor } from '@/lib/pos-settings';
 import { cn } from '@/lib/utils';
 import { fileUrl } from '@/lib/voucher-code';
 import {
 	redeemVoucherCash,
 	redeemVoucherGoods,
+	staleSyncMessage,
 	useBeneficiary,
 	useHamper,
 	useOpenPosSession,
 	useRedemptionsForVoucher,
+	useSettings,
+	useSyncFreshness,
 	useVoucherByNo,
 } from '@/repositories';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -51,7 +55,7 @@ import * as React from 'react';
 import { Alert, Image, Pressable, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
-// The 2-use hard limit, made visible: one dot per allowed use.
+// The configured use limit, made visible: one dot per allowed use.
 function UseDots({ used, max }: { used: number; max: number }) {
 	return (
 		<View className="flex-row items-center gap-1.5">
@@ -77,6 +81,8 @@ export default function VoucherDetail() {
 	const redemptions = useRedemptionsForVoucher(voucher?.id);
 	const session = useOpenPosSession();
 	const profile = useActivePosProfile();
+	const settings = useSettings();
+	const freshness = useSyncFreshness();
 	const { format, symbol } = useCurrency();
 	const [input, setInput] = React.useState('');
 	const [confirming, setConfirming] = React.useState(false);
@@ -90,12 +96,28 @@ export default function VoucherDetail() {
 		);
 	}
 
+	// Setting 3: where spent vouchers are hidden, the detail is closed off too —
+	// otherwise a deep link or the back button would still expose the
+	// beneficiary, amounts and redemption history a scan is meant to withhold.
+	if (isVoucherHiddenFromScan(voucher, settings)) {
+		return (
+			<Screen>
+				<EmptyState
+					icon={SearchX}
+					title="Already redeemed"
+					subtitle={`${voucher.voucherNo} has been fully redeemed.`}
+				/>
+			</Screen>
+		);
+	}
+
 	const isCash = voucher.entitlementType === 'cash';
 	const qrUrl = fileUrl(voucher.image);
 	const remaining = isCash
 		? voucher.amount - voucher.redeemedAmount
 		: (voucher.qty ?? 0) - voucher.redeemedQty;
-	const usesLeft = voucher.maxUses - voucher.usesCount;
+	const maxUses = maxUsesFor(voucher, settings);
+	const usesLeft = maxUses - voucher.usesCount;
 	// A voucher from another profile's warehouse is reachable by an exact
 	// voucher-no search (deliberately — the agent scanned it and deserves a real
 	// answer) but must not be issued against this shift. The mutation refuses it
@@ -106,7 +128,10 @@ export default function VoucherDetail() {
 		(voucher.status === 'active' || voucher.status === 'partially_redeemed') &&
 		usesLeft > 0 &&
 		remaining > 0 &&
-		!wrongWarehouse;
+		!wrongWarehouse &&
+		// Setting 1: nothing may be issued from a device that has been out of
+		// contact past the configured limit (the mutation refuses it too).
+		!freshness.isStale;
 
 	// Default the amount/qty to the full remaining; agent can lower it (partial).
 	const value = input.trim() === '' ? remaining : Number(input);
@@ -138,7 +163,9 @@ export default function VoucherDetail() {
 								<Text className="font-display text-xl tracking-tight">{voucher.voucherNo}</Text>
 								{voucher.beneficiaryNo && (
 									<Text className="text-muted-foreground mt-0.5 text-sm">
-										{beneficiary ? `${beneficiary.fullName} · ${voucher.beneficiaryNo}` : voucher.beneficiaryNo}
+										{settings.showBeneficiaryDetails && beneficiary
+											? `${beneficiary.fullName} · ${voucher.beneficiaryNo}`
+											: voucher.beneficiaryNo}
 									</Text>
 								)}
 							</View>
@@ -166,9 +193,9 @@ export default function VoucherDetail() {
 								<Stat label="Remaining" value={`×${remaining} ${hamper?.name ? '' : ''}`.trim()} />
 							)}
 							<View className="flex-1 gap-1.5">
-								<UseDots used={voucher.usesCount} max={voucher.maxUses} />
+								<UseDots used={voucher.usesCount} max={maxUses} />
 								<Text className="text-muted-foreground text-[11px] uppercase tracking-wider">
-									{usesLeft} of {voucher.maxUses} uses left
+									{usesLeft} of {maxUses} uses left
 								</Text>
 							</View>
 						</View>
@@ -183,7 +210,7 @@ export default function VoucherDetail() {
 										Cash · {format(voucher.amount)} total
 									</Text>
 								</View>
-							) : (
+							) : settings.showHamperContents ? (
 								<Pressable
 									onPress={() => setShowContents(true)}
 									accessibilityRole="button"
@@ -197,6 +224,14 @@ export default function VoucherDetail() {
 									<Text className="text-muted-foreground text-[11px]">View contents</Text>
 									<Icon as={ChevronRight} size={14} className="text-muted-foreground" />
 								</Pressable>
+							) : (
+								/* Setting 5 off: name the hamper, but no way into its contents. */
+								<View className="flex-row items-center gap-2">
+									<Icon as={Gift} size={15} className="text-muted-foreground" />
+									<Text className="text-muted-foreground flex-1 text-sm" numberOfLines={1}>
+										{hamper?.name ?? 'Hamper'} · {voucher.qty ?? 0} total
+									</Text>
+								</View>
 							)}
 							<View className="flex-row items-center gap-2">
 								<Icon as={CalendarDays} size={15} className="text-muted-foreground" />
@@ -232,7 +267,7 @@ export default function VoucherDetail() {
 
 			{/* Who the voucher belongs to — the agent confirms the person in front of
 			    them before issuing. Walk-in vouchers have no beneficiary record. */}
-			{beneficiary && (
+			{settings.showBeneficiaryDetails && beneficiary && (
 				<Animated.View entering={FadeInDown.duration(320).delay(40)}>
 					<SectionLabel>Beneficiary</SectionLabel>
 					<Card>
@@ -283,18 +318,24 @@ export default function VoucherDetail() {
 				<Animated.View entering={FadeInDown.duration(320).delay(60)}>
 					<AlertBanner icon={Info} className="border-warning/40 bg-warning/10">
 						<AlertTitle className="text-warning">
-							{wrongWarehouse ? 'Different POS profile' : 'Cannot redeem'}
+							{freshness.isStale
+								? 'Sync required'
+								: wrongWarehouse
+									? 'Different POS profile'
+									: 'Cannot redeem'}
 						</AlertTitle>
 						<AlertDescription className="text-warning">
-							{wrongWarehouse
-								? `This voucher belongs to ${voucher.warehouse}. Switch to that POS profile to redeem it.`
-								: voucher.status === 'redeemed'
-									? 'Voucher is fully redeemed.'
-									: voucher.status === 'expired'
-										? 'Voucher is outside its validity window.'
-										: remaining <= 0
-											? 'Nothing left to redeem on this voucher.'
-											: 'This voucher cannot be redeemed.'}
+							{freshness.isStale
+								? staleSyncMessage(freshness)
+								: wrongWarehouse
+									? `This voucher belongs to ${voucher.warehouse}. Switch to that POS profile to redeem it.`
+									: voucher.status === 'redeemed'
+										? 'Voucher is fully redeemed.'
+										: voucher.status === 'expired'
+											? 'Voucher is outside its validity window.'
+											: remaining <= 0
+												? 'Nothing left to redeem on this voucher.'
+												: 'This voucher cannot be redeemed.'}
 						</AlertDescription>
 					</AlertBanner>
 				</Animated.View>
@@ -365,14 +406,16 @@ export default function VoucherDetail() {
 				</>
 			)}
 
-			<HamperContentsDialog
-				open={showContents}
-				onOpenChange={setShowContents}
-				title={hamper?.name ?? 'Hamper'}
-				bomId={voucher.bomId}
-				hamperId={voucher.hamperId}
-				multiplier={Math.max(1, Math.trunc(valid ? value : remaining))}
-			/>
+			{settings.showHamperContents && (
+				<HamperContentsDialog
+					open={showContents}
+					onOpenChange={setShowContents}
+					title={hamper?.name ?? 'Hamper'}
+					bomId={voucher.bomId}
+					hamperId={voucher.hamperId}
+					multiplier={Math.max(1, Math.trunc(valid ? value : remaining))}
+				/>
+			)}
 
 			{/* Redemption confirmation */}
 			<AlertDialog open={confirming} onOpenChange={setConfirming}>
@@ -383,7 +426,7 @@ export default function VoucherDetail() {
 							{isCash
 								? `Record an Entitlement Redemption of ${format(value)} against ${voucher.voucherNo}?`
 								: `Issue ${value} × ${hamper?.name ?? 'hamper'} against ${voucher.voucherNo}?`}{' '}
-							This uses 1 of the voucher's {voucher.maxUses} allowed transactions.
+							This uses 1 of the voucher's {maxUses} allowed transactions.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

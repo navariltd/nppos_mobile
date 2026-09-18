@@ -5,6 +5,7 @@
 import { db } from '@/db/client';
 import {
 	agentStock,
+	appSettings,
 	assignments,
 	beneficiaries,
 	bomItems,
@@ -103,6 +104,7 @@ export function resetLocalData(): void {
 		tx.delete(beneficiaries).run();
 		tx.delete(posProfiles).run();
 		tx.delete(syncMeta).run();
+		tx.delete(appSettings).run();
 	});
 }
 
@@ -415,6 +417,21 @@ export function applyPull(pull: PullResponse): number {
 				.run();
 			upserts++;
 		}
+		// Settings are replaced wholesale: the server sends the full object on
+		// every pull and the device never edits them. Anything the server has
+		// stopped sending therefore disappears rather than lingering as a
+		// stale override. useLiveQuery on app_settings re-renders every screen
+		// reading useSettings() the moment this lands.
+		tx.delete(appSettings).run();
+		tx.insert(appSettings)
+			.values(
+				Object.entries(pull.settings).map(([key, value]) => ({
+					key,
+					value: JSON.stringify(value),
+				})),
+			)
+			.run();
+		upserts++;
 		for (const [collection, cursor] of Object.entries(pull.cursors)) {
 			tx.insert(syncMeta)
 				.values({ collection, cursor, lastPulledAt: nowIso() })

@@ -23,7 +23,12 @@ import { useOnline } from '@/hooks/online';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { syncNow } from '@/features/sync/engine';
 import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
-import { closePosSession, useOpenPosSession, useSyncCounts } from '@/repositories';
+import {
+	closePosSession,
+	useOpenPosSession,
+	useSettings,
+	useSyncCounts,
+} from '@/repositories';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { useSession } from '@/hooks/session';
 import { useThemeMode, type ThemeMode } from '@/hooks/theme';
@@ -90,6 +95,7 @@ export default function Profile() {
 	const openSession = useOpenPosSession();
 	const posProfile = useActivePosProfile();
 	const preflight = useShiftPreflight();
+	const settings = useSettings();
 
 	// Only admins may switch profiles; a collection-center user stays on the
 	// profile they picked at login until they sign out.
@@ -113,6 +119,17 @@ export default function Profile() {
 	// with work still queued would strand it until someone logs back in on this
 	// same device.
 	const handleSignOut = async () => {
+		// Setting 7: sign-out auto-closes an open shift, and that path has no
+		// photo to attach — so where the photo is mandatory, the agent has to
+		// close properly from reconciliation first.
+		if (openSession && settings.requireCloseOutPhoto) {
+			Alert.alert(
+				'Close your session first',
+				'A close-out photo is required. Close the session from End-of-Day Reconciliation, then sign out.',
+			);
+			return;
+		}
+
 		const pre = await preflight.run('sign out');
 		if (!pre.ok) {
 			Alert.alert('Cannot sign out', pre.reason);

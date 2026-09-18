@@ -5,6 +5,7 @@
 // doctype mapping). Screens/hooks never import an adapter directly (AGENTS.md
 // rule 6) — they go through getApi() in ./index.ts.
 
+import type { PosSettings } from '@/lib/pos-settings';
 import type {
 	Agent,
 	AgentStockRow,
@@ -148,6 +149,7 @@ export interface PullResponse {
 	agentStock: AgentStockRow[];
 	posProfiles: PosProfile[];
 	beneficiaries: Beneficiary[]; // only the parties on the agent's vouchers
+	settings: PosSettings;
 	// New cursor per collection, persisted to sync_meta after upsert.
 	cursors: Record<PullCollection, string>;
 }

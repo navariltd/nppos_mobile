@@ -278,6 +278,10 @@ export function useAgentStock(warehouse?: string): AgentStockRow[] {
 // under this one misrepresents the shift. Omitting it returns everything (the
 // admin/debug view). Rows recorded before transactions carried a warehouse have
 // none and therefore fall outside any scoped list.
+//
+// The list is also capped by the retention setting (AIGT HDR Settings › POS
+// App): after each sync, synced rows beyond it are pruned from the device
+// (src/repositories/maintenance.ts). Pending and needs-review rows never are.
 export function useTransactions(
 	filter: 'all' | SyncStatus = 'all',
 	warehouse?: string,

@@ -12,6 +12,7 @@ import m0008 from './20260813121613_voucher_bom_and_beneficiary/migration.sql';
 import m0009 from './20260814050822_redemption_pos_opening_entry/migration.sql';
 import m0010 from './20260826050446_voucher_and_txn_warehouse/migration.sql';
 import m0011 from './20260827093323_drop_damaged_stock/migration.sql';
+import m0012 from './20260918061736_app_settings/migration.sql';
 
   export default {
     migrations: {
@@ -26,7 +27,8 @@ import m0011 from './20260827093323_drop_damaged_stock/migration.sql';
 "20260813121613_voucher_bom_and_beneficiary": m0008,
 "20260814050822_redemption_pos_opening_entry": m0009,
 "20260826050446_voucher_and_txn_warehouse": m0010,
-"20260827093323_drop_damaged_stock": m0011
+"20260827093323_drop_damaged_stock": m0011,
+"20260918061736_app_settings": m0012
 }
   }
   

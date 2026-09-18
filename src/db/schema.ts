@@ -115,7 +115,10 @@ export const vouchers = sqliteTable(
 			.default('active'),
 		image: text('image'),
 		usesCount: integer('uses_count').notNull().default(0),
-		maxUses: integer('max_uses').notNull().default(2), // hard limit (AGENTS.md rule 4)
+		// Server-stamped from AIGT HDR Settings › POS App at pull time. It is a
+		// display fallback only — every check goes through maxUsesFor() in
+		// src/lib/pos-settings.ts, which prefers the live setting.
+		maxUses: integer('max_uses').notNull().default(2),
 		// accounting ref that posts on the redemption (a plain name string)
 		project: text('project').notNull(),
 		// The warehouse this voucher belongs to (Entitlement Voucher.warehouse).
@@ -256,4 +259,13 @@ export const syncMeta = sqliteTable('sync_meta', {
 	collection: text('collection').primaryKey(),
 	cursor: text('cursor'),
 	lastPulledAt: text('last_pulled_at'),
+});
+
+// Server-driven app configuration (AIGT HDR Settings › POS App), replaced
+// wholesale on every pull — there are no local edits and no cursor. Key/value
+// so adding a setting needs no migration; the typed view is
+// src/lib/pos-settings.ts, read through src/repositories/settings.ts.
+export const appSettings = sqliteTable('app_settings', {
+	key: text('key').primaryKey(),
+	value: text('value').notNull(), // JSON-encoded scalar
 });

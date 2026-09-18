@@ -14,9 +14,11 @@ import {
 	applyPull,
 	getOutboxBatch,
 	getPullCursors,
+	getSettings,
 	markPushAccepted,
 	markPushFailed,
 	markPushRejected,
+	pruneSyncedTransactions,
 	type OutboxItem,
 } from '@/repositories';
 import { getApi } from '@/services/api';
@@ -72,6 +74,11 @@ export const syncNow = createAsyncThunk<SyncResult, void>(
 
 			// ---- pull (reference-data delta) ----
 			const pulled = applyPull(await api.pull(getPullCursors()));
+
+			// ---- retention (settings just landed with the pull) ----
+			// Everything still queued was pushed above, so anything now marked
+			// 'synced' is safe to age out. Never fails the sync.
+			pruneSyncedTransactions(getSettings().transactionRetention);
 
 			dispatch(syncFinished({ at: new Date().toISOString() }));
 			return { pushed, conflicts, pulled };
