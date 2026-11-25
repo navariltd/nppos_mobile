@@ -57,6 +57,10 @@ export interface Voucher {
 	project: string; // accounting ref (name string)
 	// The warehouse this voucher belongs to — scopes it to one POS profile.
 	warehouse: string;
+	// Assigned agent — only they may redeem it. Absent = any agent on the warehouse.
+	agentId?: string;
+	agentName?: string;
+	agentUser?: string;
 	assignmentId?: string;
 	image?: string;
 }

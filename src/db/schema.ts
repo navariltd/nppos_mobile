@@ -125,6 +125,13 @@ export const vouchers = sqliteTable(
 		// The device holds the vouchers of EVERY profile the agent can work
 		// under, so this is what scopes a list to the active POS profile.
 		warehouse: text('warehouse').notNull().default(''),
+		// The agent this voucher is assigned to (Entitlement Voucher.agent). A
+		// warehouse is shared by every agent with a profile on it, so this is
+		// what stops one agent redeeming another's voucher. Null = any agent on
+		// the warehouse (walk-in / unassigned vouchers).
+		agentId: text('agent_id'), // Employee
+		agentName: text('agent_name'),
+		agentUser: text('agent_user'), // their login email — compared to the signed-in user
 		assignmentId: text('assignment_id').references(() => assignments.id),
 	},
 	(t) => [

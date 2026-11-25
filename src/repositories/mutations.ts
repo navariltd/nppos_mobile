@@ -21,7 +21,9 @@ import {
 	voucherRedemptions,
 	vouchers,
 } from '@/db/schema';
+import { formatDate } from '@/lib/format';
 import { maxUsesFor } from '@/lib/pos-settings';
+import { voucherValidity } from '@/lib/voucher-validity';
 import { uuid } from '@/lib/uuid';
 import type { ClosingPhoto } from '@/services/api';
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -34,9 +36,6 @@ function nowIso(): string {
 	return new Date().toISOString();
 }
 
-function today(): string {
-	return nowIso().slice(0, 10);
-}
 
 function getOpenSession() {
 	// The signed-in user's shift — another user's can never be redeemed against.
@@ -119,31 +118,40 @@ function loadVoucherForRedeem(voucherId: string, sessionWarehouse: string): Vouc
 			error: `This voucher belongs to ${voucher.warehouse}. Switch to that POS profile to redeem it.`,
 		} as const;
 	}
+	// Same warehouse is not enough when the voucher is assigned to an agent:
+	// every agent with a profile on the warehouse receives it, but only the
+	// assigned one may redeem it (the server refuses it too).
+	if (voucher.agentUser && voucher.agentUser !== deviceOwner()) {
+		return {
+			error: `This voucher is assigned to ${voucher.agentName ?? voucher.agentUser}. Only they can redeem it.`,
+		} as const;
+	}
 
+	// Dates first: a voucher can read 'active' locally after its window closed
+	// (the status is only as fresh as the last pull that re-sent it), and the
+	// agent needs to hear "expired on …", not a generic refusal.
+	const validity = voucherValidity(voucher);
+	if (voucher.status === 'expired' || validity.state === 'expired') {
+		return {
+			error: voucher.validTo
+				? `This voucher expired on ${formatDate(voucher.validTo)}. It can no longer be redeemed.`
+				: 'This voucher has expired. It can no longer be redeemed.',
+		} as const;
+	}
+	if (validity.state === 'not_yet') {
+		return {
+			error: `This voucher is not valid until ${formatDate(validity.from)}.`,
+		} as const;
+	}
 	// Backend statuses (docs/NPPOS_WEB.md): partially redeemed is still usable.
 	if (voucher.status !== 'active' && voucher.status !== 'partially_redeemed') {
-		return {
-			error:
-				voucher.status === 'redeemed'
-					? 'Voucher is fully redeemed.'
-					: 'Voucher is outside its validity window.',
-		} as const;
+		return { error: 'Voucher is fully redeemed.' } as const;
 	}
 	// The limit is configuration (AIGT HDR Settings › POS App), read fresh at
 	// redemption time — the same number the backend re-checks at submit.
 	const maxUses = maxUsesFor(voucher, getSettings());
 	if (voucher.usesCount >= maxUses) {
 		return { error: `Voucher has reached its ${maxUses}-use limit.` } as const;
-	}
-	// Only enforce the bounds that are actually set — the backend leaves
-	// valid_from/valid_to blank ('') on open-ended vouchers, and '' must not read
-	// as "expired" (any date string compares greater than '').
-	const day = today();
-	if (voucher.validFrom && day < voucher.validFrom) {
-		return { error: 'Voucher is not valid yet.' } as const;
-	}
-	if (voucher.validTo && day > voucher.validTo) {
-		return { error: 'Voucher is outside its validity window.' } as const;
 	}
 
 	const recipientLabel = voucher.beneficiaryNo

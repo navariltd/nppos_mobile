@@ -19,6 +19,7 @@ import {
 	applyPull,
 	getOutboxBatch,
 	getPullCursors,
+	runPullBackfills,
 	getSettings,
 	markPushAccepted,
 	markPushFailed,
@@ -93,6 +94,7 @@ export const syncNow = createAsyncThunk<SyncResult, SyncOptions | void>(
 
 			// ---- pull (reference-data delta) ----
 			const user = (getState() as { auth?: { agent?: { email?: string } | null } }).auth?.agent?.email ?? null;
+			runPullBackfills();
 			const pulled = applyPull(await api.pull(getPullCursors()), user);
 
 			// ---- retention (settings just landed with the pull) ----

@@ -27,7 +27,7 @@ import type {
 	PullResponse,
 } from '@/services/api';
 import type { PosProfile } from '@/types/domain';
-import { asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
 export interface OutboxItem {
 	id: string;
@@ -295,6 +295,7 @@ export function markPushRejected(
 	ledger?: string,
 ): void {
 	db.transaction((tx) => {
+		if (outcome === 'rejected') undoRejectedIssue(tx, item.id);
 		tx.update(posTransactions)
 			.set(
 				outcome === 'rejected'
@@ -305,6 +306,42 @@ export function markPushRejected(
 			.run();
 		tx.delete(outbox).where(eq(outbox.id, item.id)).run();
 	});
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// A goods issue that ends up REJECTED never happened as far as the ledger is
+// concerned — no Stock Entry was posted. The pulled on-hand already reflects
+// that (the Bin never moved), but `issued_today` is a device-side tally the
+// pull never overwrites, so take the issue back out of it here. Call BEFORE the
+// row's status flips to 'rejected': it only acts on a row that isn't rejected
+// yet, which is what makes it run once per transaction.
+function undoRejectedIssue(tx: Tx, transactionId: string, alreadyRejected = false): void {
+	const t = tx
+		.select({
+			status: posTransactions.status,
+			type: posTransactions.type,
+			qty: posTransactions.qty,
+			voucherNo: posTransactions.voucherNo,
+			warehouse: posTransactions.warehouse,
+		})
+		.from(posTransactions)
+		.where(eq(posTransactions.id, transactionId))
+		.get();
+	if (!t || t.type !== 'goods_issue' || !t.qty || !t.warehouse) return;
+	if (t.status === 'rejected' && !alreadyRejected) return;
+	const hamperId = t.voucherNo
+		? tx
+				.select({ hamperId: vouchers.hamperId })
+				.from(vouchers)
+				.where(eq(vouchers.voucherNo, t.voucherNo))
+				.get()?.hamperId
+		: undefined;
+	if (!hamperId) return;
+	tx.update(agentStock)
+		.set({ issuedToday: sql`max(0, ${agentStock.issuedToday} - ${t.qty})` })
+		.where(and(eq(agentStock.warehouse, t.warehouse), eq(agentStock.hamperId, hamperId)))
+		.run();
 }
 
 // Transport/server failure: exponential backoff (5s · 2^attempt, capped 10min).
@@ -326,6 +363,52 @@ export function markPushFailed(item: OutboxItem, error: string): void {
 // sync_meta rows whose name starts with this are device bookkeeping (OWNER_KEY),
 // not pull cursors — never sent to the server.
 const META_PREFIX = '__';
+
+// One-off re-pulls for data the server only started sending later. A delta pull
+// never re-sends an unchanged row, so a new field would stay empty on the device
+// for every voucher that doesn't happen to change. Each entry drops the listed
+// cursors once (marker row in sync_meta) so the next pull sends the full,
+// bounded set. Done in code rather than in a migration: a migration can be
+// applied by Metro's reload the moment drizzle-kit writes it, before its SQL is
+// finished, and is then never re-run.
+const BACKFILLS: { key: string; cursors: string[]; run?: (tx: Tx) => void }[] = [
+	// Assigned agent on vouchers — the "assigned to another agent" guard.
+	{ key: `${'__'}backfill_voucher_agent`, cursors: ['vouchers', 'warehouses'] },
+	// Unredeemed EXPIRED vouchers of any age are now part of the full set, so a
+	// scan says "expired on …" instead of "not found".
+	{ key: `${'__'}backfill_expired_vouchers`, cursors: ['vouchers', 'warehouses'] },
+	// Goods issues rejected BEFORE undoRejectedIssue existed were never taken
+	// back out of issued_today — do it once for every one of them.
+	{
+		key: `${'__'}backfill_rejected_issue_tally`,
+		cursors: [],
+		run: (tx) => {
+			for (const r of tx
+				.select({ id: posTransactions.id })
+				.from(posTransactions)
+				.where(and(eq(posTransactions.status, 'rejected'), eq(posTransactions.type, 'goods_issue')))
+				.all()) {
+				undoRejectedIssue(tx, r.id, true);
+			}
+		},
+	},
+];
+
+export function runPullBackfills(): void {
+	for (const b of BACKFILLS) {
+		const done = db
+			.select({ c: syncMeta.collection })
+			.from(syncMeta)
+			.where(eq(syncMeta.collection, b.key))
+			.get();
+		if (done) continue;
+		db.transaction((tx) => {
+			for (const c of b.cursors) tx.delete(syncMeta).where(eq(syncMeta.collection, c)).run();
+			b.run?.(tx);
+			tx.insert(syncMeta).values({ collection: b.key, cursor: nowIso(), lastPulledAt: null }).run();
+		});
+	}
+}
 
 export function getPullCursors(): PullCursors {
 	const rows = db.select().from(syncMeta).all();
@@ -465,190 +548,241 @@ export function applyPull(pull: PullResponse, user: string | null = null): numbe
 			.map((r) => r.id),
 	);
 
-	let upserts = 0;
-	db.transaction((tx) => {
-		// Defer FK checks to COMMIT so interdependent rows can be upserted in any
-		// order — e.g. a goods voucher references a hamper that's inserted later
-		// in the same batch (foreign_keys = ON in client.ts would otherwise throw
-		// mid-transaction and roll back the whole pull). Auto-resets at commit.
-		tx.run(sql`PRAGMA defer_foreign_keys = ON`);
+	// Parents a pulled row may reference: what is already on the device plus
+	// what this pull brings. FK checks are deferred to COMMIT, so ONE dangling
+	// reference would fail the entire pull with an opaque "Failed query:
+	// commit" and leave the agent unable to sync at all. A reference the server
+	// didn't send is dropped from that row instead (logged), and the rest of the
+	// pull lands; the next pull that carries the parent fills it back in.
+	const known = {
+		assignments: new Set([
+			...db.select({ id: assignments.id }).from(assignments).all().map((r) => r.id),
+			...pull.assignments.map((a) => a.id),
+		]),
+		hampers: new Set([
+			...db.select({ id: hampers.id }).from(hampers).all().map((r) => r.id),
+			...pull.hampers.map((h) => h.id),
+		]),
+		boms: new Set([
+			...db.select({ id: boms.id }).from(boms).all().map((r) => r.id),
+			...pull.boms.map((b) => b.id),
+		]),
+	};
+	const dangling: string[] = [];
+	const ref = (kind: keyof typeof known, id: string | null | undefined, owner: string) => {
+		if (!id) return null;
+		if (known[kind].has(id)) return id;
+		dangling.push(`${owner} → ${kind} ${id}`);
+		return null;
+	};
 
-		for (const a of pull.assignments) {
-			const row = {
-				id: a.id,
-				agentId: a.agentId,
-				project: a.project,
-				disbursementOrder: a.disbursementOrder ?? null,
-				date: a.date ?? null,
-				amountToDisburse: a.amountToDisburse,
-			};
-			tx.insert(assignments)
-				.values(row)
-				.onConflictDoUpdate({ target: assignments.id, set: row })
+	let upserts = 0;
+	try {
+		db.transaction((tx) => {
+			// Defer FK checks to COMMIT so interdependent rows can be upserted in any
+			// order — e.g. a goods voucher references a hamper that's inserted later
+			// in the same batch (foreign_keys = ON in client.ts would otherwise throw
+			// mid-transaction and roll back the whole pull). Auto-resets at commit.
+			tx.run(sql`PRAGMA defer_foreign_keys = ON`);
+
+			for (const a of pull.assignments) {
+				const row = {
+					id: a.id,
+					agentId: a.agentId,
+					project: a.project,
+					disbursementOrder: a.disbursementOrder ?? null,
+					date: a.date ?? null,
+					amountToDisburse: a.amountToDisburse,
+				};
+				tx.insert(assignments)
+					.values(row)
+					.onConflictDoUpdate({ target: assignments.id, set: row })
+					.run();
+				upserts++;
+			}
+			for (const v of pull.vouchers) {
+				if (pendingVoucherNos.has(v.voucherNo)) continue;
+				const row = {
+					id: v.id,
+					voucherNo: v.voucherNo,
+					beneficiaryNo: v.beneficiaryNo ?? null,
+					entitlementType: v.entitlementType,
+					amount: v.amount,
+					hamperId: ref('hampers', v.hamperId, `voucher ${v.id}`),
+					bomId: ref('boms', v.bomId, `voucher ${v.id}`),
+					qty: v.qty ?? null,
+					uom: v.uom ?? null,
+					rate: v.rate ?? null,
+					redeemedAmount: v.redeemedAmount,
+					redeemedQty: v.redeemedQty,
+					validFrom: v.validFrom,
+					validTo: v.validTo,
+					status: v.status,
+					usesCount: v.usesCount,
+					maxUses: v.maxUses,
+					project: v.project,
+					warehouse: v.warehouse,
+					agentId: v.agentId ?? null,
+					agentName: v.agentName ?? null,
+					agentUser: v.agentUser ?? null,
+					assignmentId: ref('assignments', v.assignmentId, `voucher ${v.id}`),
+					image: v.image ?? null,
+				};
+				tx.insert(vouchers)
+					.values(row)
+					.onConflictDoUpdate({ target: vouchers.id, set: row })
+					.run();
+				upserts++;
+			}
+			for (const b of pull.boms) {
+				const row = {
+					id: b.id,
+					itemCode: b.itemCode,
+					itemName: b.itemName,
+					quantity: b.quantity,
+					uom: b.uom ?? null,
+				};
+				tx.insert(boms)
+					.values(row)
+					.onConflictDoUpdate({ target: boms.id, set: row })
+					.run();
+				// Components are replaced wholesale — they have no local edits.
+				tx.delete(bomItems).where(eq(bomItems.bomId, b.id)).run();
+				if (b.items.length > 0) {
+					tx.insert(bomItems)
+						.values(b.items.map((i) => ({ bomId: b.id, ...i })))
+						.run();
+				}
+				upserts++;
+			}
+			for (const b of pull.beneficiaries) {
+				const row = {
+					id: b.id,
+					fullName: b.fullName,
+					idNumber: b.idNumber ?? null,
+					status: b.status ?? null,
+					phone: b.phone ?? null,
+					householdSize: b.householdSize,
+					beneficiaryType: b.beneficiaryType ?? null,
+					district: b.district ?? null,
+				};
+				tx.insert(beneficiaries)
+					.values(row)
+					.onConflictDoUpdate({ target: beneficiaries.id, set: row })
+					.run();
+				upserts++;
+			}
+			for (const h of pull.hampers) {
+				tx.insert(hampers)
+					.values({ id: h.id, name: h.name })
+					.onConflictDoUpdate({
+						target: hampers.id,
+						set: { name: h.name },
+					})
+					.run();
+				// Component list is replaced wholesale — it has no local edits.
+				tx.delete(hamperItems).where(eq(hamperItems.hamperId, h.id)).run();
+				if (h.items.length > 0) {
+					tx.insert(hamperItems)
+						.values(h.items.map((i) => ({ hamperId: h.id, ...i })))
+						.run();
+				}
+				upserts++;
+			}
+			for (const s of pull.agentStock) {
+				// onHand comes from the server's Bin and is authoritative. issuedToday
+				// and damaged are DEVICE-side day counters the backend has no notion of
+				// (it always sends 0), so they are set on first insert only — updating
+				// them here would reset the agent's running tallies on every sync.
+				// hamper_id is part of the key — a row for an item never sent as a
+				// hamper can't be stored at all, so it waits for a pull that has it.
+				if (!ref('hampers', s.hamperId, `stock ${s.warehouse}`)) continue;
+				const bomId = ref('boms', s.bomId, `stock ${s.warehouse} ${s.hamperId}`);
+				const onHand = Math.max(
+					0,
+					s.onHand - (queuedOut.get(`${s.warehouse} ${s.hamperId}`) ?? 0),
+				);
+				tx.insert(agentStock)
+					.values({ ...s, bomId, onHand })
+					.onConflictDoUpdate({
+						target: [agentStock.warehouse, agentStock.hamperId],
+						set: {
+							hamperName: s.hamperName,
+							bomId,
+							onHand,
+						},
+					})
+					.run();
+				upserts++;
+			}
+			// Ledger verdicts. Still-queued local work wins (it hasn't been pushed, so
+			// the ledger can't know its latest state); everything else takes the
+			// server's word — that is how an admin's Retry / Force post / Reject
+			// reaches the agent.
+			for (const t of pull.transactions ?? []) {
+				if (!LEDGER_KINDS.has(t.kind) || queuedIds.has(t.clientRef)) continue;
+				const state = ledgerState(t);
+				if (!state) continue;
+				const local = tx
+					.select({ id: posTransactions.id })
+					.from(posTransactions)
+					.where(eq(posTransactions.id, t.clientRef))
+					.get();
+				if (local) {
+					// Rejected in the desk → take a goods issue back out of today's
+					// tally (no-op if this row was already rejected).
+					if (state.status === 'rejected') undoRejectedIssue(tx, t.clientRef);
+					tx.update(posTransactions).set(state).where(eq(posTransactions.id, t.clientRef)).run();
+				} else {
+					tx.insert(posTransactions)
+						.values({ ...rebuiltTransaction(t, user), ...state })
+						.run();
+				}
+				upserts++;
+			}
+			for (const p of pull.posProfiles) {
+				tx.insert(posProfiles)
+					.values(p)
+					.onConflictDoUpdate({ target: posProfiles.id, set: p })
+					.run();
+				upserts++;
+			}
+			// Settings are replaced wholesale: the server sends the full object on
+			// every pull and the device never edits them. Anything the server has
+			// stopped sending therefore disappears rather than lingering as a
+			// stale override. useLiveQuery on app_settings re-renders every screen
+			// reading useSettings() the moment this lands.
+			tx.delete(appSettings).run();
+			tx.insert(appSettings)
+				.values(
+					Object.entries(pull.settings).map(([key, value]) => ({
+						key,
+						value: JSON.stringify(value),
+					})),
+				)
 				.run();
 			upserts++;
-		}
-		for (const v of pull.vouchers) {
-			if (pendingVoucherNos.has(v.voucherNo)) continue;
-			const row = {
-				id: v.id,
-				voucherNo: v.voucherNo,
-				beneficiaryNo: v.beneficiaryNo ?? null,
-				entitlementType: v.entitlementType,
-				amount: v.amount,
-				hamperId: v.hamperId ?? null,
-				bomId: v.bomId ?? null,
-				qty: v.qty ?? null,
-				uom: v.uom ?? null,
-				rate: v.rate ?? null,
-				redeemedAmount: v.redeemedAmount,
-				redeemedQty: v.redeemedQty,
-				validFrom: v.validFrom,
-				validTo: v.validTo,
-				status: v.status,
-				usesCount: v.usesCount,
-				maxUses: v.maxUses,
-				project: v.project,
-				warehouse: v.warehouse,
-				assignmentId: v.assignmentId ?? null,
-				image: v.image ?? null,
-			};
-			tx.insert(vouchers)
-				.values(row)
-				.onConflictDoUpdate({ target: vouchers.id, set: row })
-				.run();
-			upserts++;
-		}
-		for (const b of pull.boms) {
-			const row = {
-				id: b.id,
-				itemCode: b.itemCode,
-				itemName: b.itemName,
-				quantity: b.quantity,
-				uom: b.uom ?? null,
-			};
-			tx.insert(boms)
-				.values(row)
-				.onConflictDoUpdate({ target: boms.id, set: row })
-				.run();
-			// Components are replaced wholesale — they have no local edits.
-			tx.delete(bomItems).where(eq(bomItems.bomId, b.id)).run();
-			if (b.items.length > 0) {
-				tx.insert(bomItems)
-					.values(b.items.map((i) => ({ bomId: b.id, ...i })))
+			for (const [collection, cursor] of Object.entries(pull.cursors)) {
+				tx.insert(syncMeta)
+					.values({ collection, cursor, lastPulledAt: nowIso() })
+					.onConflictDoUpdate({
+						target: syncMeta.collection,
+						set: { cursor, lastPulledAt: nowIso() },
+					})
 					.run();
 			}
-			upserts++;
-		}
-		for (const b of pull.beneficiaries) {
-			const row = {
-				id: b.id,
-				fullName: b.fullName,
-				idNumber: b.idNumber ?? null,
-				status: b.status ?? null,
-				phone: b.phone ?? null,
-				householdSize: b.householdSize,
-				beneficiaryType: b.beneficiaryType ?? null,
-				district: b.district ?? null,
-			};
-			tx.insert(beneficiaries)
-				.values(row)
-				.onConflictDoUpdate({ target: beneficiaries.id, set: row })
-				.run();
-			upserts++;
-		}
-		for (const h of pull.hampers) {
-			tx.insert(hampers)
-				.values({ id: h.id, name: h.name })
-				.onConflictDoUpdate({
-					target: hampers.id,
-					set: { name: h.name },
-				})
-				.run();
-			// Component list is replaced wholesale — it has no local edits.
-			tx.delete(hamperItems).where(eq(hamperItems.hamperId, h.id)).run();
-			if (h.items.length > 0) {
-				tx.insert(hamperItems)
-					.values(h.items.map((i) => ({ hamperId: h.id, ...i })))
-					.run();
-			}
-			upserts++;
-		}
-		for (const s of pull.agentStock) {
-			// onHand comes from the server's Bin and is authoritative. issuedToday
-			// and damaged are DEVICE-side day counters the backend has no notion of
-			// (it always sends 0), so they are set on first insert only — updating
-			// them here would reset the agent's running tallies on every sync.
-			const onHand = Math.max(
-				0,
-				s.onHand - (queuedOut.get(`${s.warehouse} ${s.hamperId}`) ?? 0),
-			);
-			tx.insert(agentStock)
-				.values({ ...s, bomId: s.bomId ?? null, onHand })
-				.onConflictDoUpdate({
-					target: [agentStock.warehouse, agentStock.hamperId],
-					set: {
-						hamperName: s.hamperName,
-						bomId: s.bomId ?? null,
-						onHand,
-					},
-				})
-				.run();
-			upserts++;
-		}
-		// Ledger verdicts. Still-queued local work wins (it hasn't been pushed, so
-		// the ledger can't know its latest state); everything else takes the
-		// server's word — that is how an admin's Retry / Force post / Reject
-		// reaches the agent.
-		for (const t of pull.transactions ?? []) {
-			if (!LEDGER_KINDS.has(t.kind) || queuedIds.has(t.clientRef)) continue;
-			const state = ledgerState(t);
-			if (!state) continue;
-			const local = tx
-				.select({ id: posTransactions.id })
-				.from(posTransactions)
-				.where(eq(posTransactions.id, t.clientRef))
-				.get();
-			if (local) {
-				tx.update(posTransactions).set(state).where(eq(posTransactions.id, t.clientRef)).run();
-			} else {
-				tx.insert(posTransactions)
-					.values({ ...rebuiltTransaction(t, user), ...state })
-					.run();
-			}
-			upserts++;
-		}
-		for (const p of pull.posProfiles) {
-			tx.insert(posProfiles)
-				.values(p)
-				.onConflictDoUpdate({ target: posProfiles.id, set: p })
-				.run();
-			upserts++;
-		}
-		// Settings are replaced wholesale: the server sends the full object on
-		// every pull and the device never edits them. Anything the server has
-		// stopped sending therefore disappears rather than lingering as a
-		// stale override. useLiveQuery on app_settings re-renders every screen
-		// reading useSettings() the moment this lands.
-		tx.delete(appSettings).run();
-		tx.insert(appSettings)
-			.values(
-				Object.entries(pull.settings).map(([key, value]) => ({
-					key,
-					value: JSON.stringify(value),
-				})),
-			)
-			.run();
-		upserts++;
-		for (const [collection, cursor] of Object.entries(pull.cursors)) {
-			tx.insert(syncMeta)
-				.values({ collection, cursor, lastPulledAt: nowIso() })
-				.onConflictDoUpdate({
-					target: syncMeta.collection,
-					set: { cursor, lastPulledAt: nowIso() },
-				})
-				.run();
-		}
-	});
+		});
+	} catch (e) {
+		// Drizzle reports a failed COMMIT as "Failed query: commit" — the real
+		// SQLite error (e.g. FOREIGN KEY constraint failed) is on `cause`.
+		const cause = (e as { cause?: { message?: string } })?.cause?.message;
+		console.warn('[sync] applyPull failed', e, cause);
+		throw new Error(
+			`Could not save the pulled data${cause ? ` (${cause})` : ''}. Try again; if it persists, report it.`,
+		);
+	}
+	if (dangling.length > 0) {
+		console.warn(`[sync] pull referenced ${dangling.length} missing parent row(s) — links dropped:`, dangling);
+	}
 	return upserts;
 }

@@ -14,6 +14,7 @@ import m0010 from './20260826050446_voucher_and_txn_warehouse/migration.sql';
 import m0011 from './20260827093323_drop_damaged_stock/migration.sql';
 import m0012 from './20260918061736_app_settings/migration.sql';
 import m0013 from './20261125075454_sync_ledger_and_user_scope/migration.sql';
+import m0014 from './20261125094014_voucher_agent/migration.sql';
 
   export default {
     migrations: {
@@ -30,7 +31,8 @@ import m0013 from './20261125075454_sync_ledger_and_user_scope/migration.sql';
 "20260826050446_voucher_and_txn_warehouse": m0010,
 "20260827093323_drop_damaged_stock": m0011,
 "20260918061736_app_settings": m0012,
-"20261125075454_sync_ledger_and_user_scope": m0013
+"20261125075454_sync_ledger_and_user_scope": m0013,
+"20261125094014_voucher_agent": m0014
 }
   }
   

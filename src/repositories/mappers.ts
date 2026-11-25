@@ -1,6 +1,7 @@
 // DB rows → domain types. SQLite nullable columns become the optional/required
 // shapes in src/types/domain.ts so screens keep the types they already use.
 
+import { effectiveVoucherStatus } from '@/lib/voucher-validity';
 import type {
 	assignments,
 	beneficiaries,
@@ -45,11 +46,16 @@ export function toVoucher(r: typeof vouchers.$inferSelect): Voucher {
 		redeemedQty: r.redeemedQty,
 		validFrom: r.validFrom,
 		validTo: r.validTo,
-		status: r.status,
+		// Recomputed from the dates: the stored status is only as fresh as the
+		// last pull that re-sent this voucher.
+		status: effectiveVoucherStatus(r),
 		usesCount: r.usesCount,
 		maxUses: r.maxUses,
 		project: r.project,
 		warehouse: r.warehouse,
+		agentId: r.agentId ?? undefined,
+		agentName: r.agentName ?? undefined,
+		agentUser: r.agentUser ?? undefined,
 		assignmentId: r.assignmentId ?? undefined,
 		image: r.image ?? undefined,
 	};

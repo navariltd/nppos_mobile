@@ -68,6 +68,9 @@ interface FrappePull {
 		max_uses: number;
 		project: string;
 		warehouse: string;
+		agent_id?: string | null; // assigned agent (Employee); null = unassigned
+		agent_name?: string | null;
+		agent_user?: string | null;
 		assignment_id?: string;
 		image?: string; // site-relative QR file url, e.g. /files/QNAK4OWSW-qr.png
 	}[];
@@ -299,6 +302,9 @@ export class FrappeAdapter implements ApiAdapter {
 				maxUses: v.max_uses,
 				project: v.project,
 				warehouse: v.warehouse ?? '',
+				agentId: v.agent_id || undefined,
+				agentName: v.agent_name || undefined,
+				agentUser: v.agent_user || undefined,
 				assignmentId: v.assignment_id,
 				image: v.image || undefined,
 			})),

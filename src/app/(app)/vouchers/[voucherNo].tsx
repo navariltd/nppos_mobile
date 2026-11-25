@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Text } from '@/components/ui/text';
 import { useCurrency } from '@/hooks/currency';
 import { useActivePosProfile } from '@/hooks/pos-profile';
+import { voucherValidity } from '@/lib/voucher-validity';
 import { formatDate } from '@/lib/format';
 import { isVoucherHiddenFromScan, maxUsesFor } from '@/lib/pos-settings';
 import { cn } from '@/lib/utils';
@@ -80,7 +81,8 @@ export default function VoucherDetail() {
 	const hamper = useHamper(voucher?.hamperId);
 	const beneficiary = useBeneficiary(voucher?.beneficiaryNo);
 	const redemptions = useRedemptionsForVoucher(voucher?.id);
-	const session = useOpenPosSession(useCurrentUser());
+	const currentUser = useCurrentUser();
+	const session = useOpenPosSession(currentUser);
 	const profile = useActivePosProfile();
 	const settings = useSettings();
 	const freshness = useSyncFreshness();
@@ -125,11 +127,20 @@ export default function VoucherDetail() {
 	// too; this is the UI half so the button is never a dead end.
 	const wrongWarehouse =
 		!!voucher.warehouse && !!profile?.warehouse && voucher.warehouse !== profile.warehouse;
+	// Right warehouse, wrong agent: every agent with a profile on the warehouse
+	// receives the voucher, but one assigned to an agent is theirs alone.
+	const otherAgent = !!voucher.agentUser && !!currentUser && voucher.agentUser !== currentUser;
+	const assignee = voucher.agentName ?? voucher.agentUser;
+	// voucher.status already reads 'expired' once valid_to has passed (the
+	// mapper recomputes it from the dates); a not-yet-valid one stays 'active'.
+	const notYetValid = voucherValidity(voucher).state === 'not_yet';
 	const canIssue =
 		(voucher.status === 'active' || voucher.status === 'partially_redeemed') &&
+		!notYetValid &&
 		usesLeft > 0 &&
 		remaining > 0 &&
 		!wrongWarehouse &&
+		!otherAgent &&
 		// Setting 1: nothing may be issued from a device that has been out of
 		// contact past the configured limit (the mutation refuses it too).
 		!freshness.isStale;
@@ -244,6 +255,20 @@ export default function VoucherDetail() {
 								<Icon as={FolderOpen} size={15} className="text-muted-foreground" />
 								<Text className="text-muted-foreground text-sm">{voucher.project}</Text>
 							</View>
+							{assignee ? (
+								<View className="flex-row items-center gap-2">
+									<Icon
+										as={User}
+										size={15}
+										className={otherAgent ? 'text-warning' : 'text-muted-foreground'}
+									/>
+									<Text
+										className={cn('text-sm', otherAgent ? 'text-warning' : 'text-muted-foreground')}
+									>
+										Agent · {assignee}
+									</Text>
+								</View>
+							) : null}
 							{voucher.warehouse ? (
 								<View className="flex-row items-center gap-2">
 									<Icon
@@ -323,17 +348,29 @@ export default function VoucherDetail() {
 								? 'Sync required'
 								: wrongWarehouse
 									? 'Different POS profile'
-									: 'Cannot redeem'}
+									: otherAgent
+										? 'Assigned to another agent'
+										: voucher.status === 'expired'
+											? 'Voucher expired'
+											: notYetValid
+												? 'Not valid yet'
+												: 'Cannot redeem'}
 						</AlertTitle>
 						<AlertDescription className="text-warning">
 							{freshness.isStale
 								? staleSyncMessage(freshness)
 								: wrongWarehouse
 									? `This voucher belongs to ${voucher.warehouse}. Switch to that POS profile to redeem it.`
-									: voucher.status === 'redeemed'
+									: otherAgent
+										? `This voucher is assigned to ${assignee}. Only ${assignee} can redeem it.`
+										: voucher.status === 'redeemed'
 										? 'Voucher is fully redeemed.'
 										: voucher.status === 'expired'
-											? 'Voucher is outside its validity window.'
+											? voucher.validTo
+												? `This voucher expired on ${formatDate(voucher.validTo)}. It can no longer be redeemed.`
+												: 'This voucher has expired. It can no longer be redeemed.'
+											: notYetValid
+												? `This voucher is not valid until ${formatDate(voucher.validFrom)}.`
 											: remaining <= 0
 												? 'Nothing left to redeem on this voucher.'
 												: 'This voucher cannot be redeemed.'}
