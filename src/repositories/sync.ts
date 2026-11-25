@@ -20,7 +20,12 @@ import {
 	voucherRedemptions,
 	vouchers,
 } from '@/db/schema';
-import type { OutboxPayload, PullCursors, PullResponse } from '@/services/api';
+import type {
+	LedgerTransaction,
+	OutboxPayload,
+	PullCursors,
+	PullResponse,
+} from '@/services/api';
 import type { PosProfile } from '@/types/domain';
 import { asc, eq, isNull, lte, or, sql } from 'drizzle-orm';
 
@@ -223,12 +228,26 @@ export function markPushAccepted(item: OutboxItem, serverName: string): void {
 	});
 }
 
-// Valid server rejection: transaction goes to 'conflict' (admin resolves,
-// online) and leaves the queue — it is never auto-retried, never deleted.
-export function markPushRejected(item: OutboxItem, reason: string): void {
+// The server recorded the push in its POS Sync Ledger but could not post it:
+//  - 'needs_review' → local 'conflict': parked for an admin in the desk;
+//  - 'rejected'     → local 'rejected': an admin already rejected it (final).
+// Either way it leaves the queue — never auto-retried, never deleted. The
+// admin's later decision arrives through applyPull (pull.transactions).
+// Session opens/closes have no pos_transactions row; their ledger row in the
+// desk is the record (a refused opening is rolled back by PosSessionCard).
+export function markPushRejected(
+	item: OutboxItem,
+	outcome: 'needs_review' | 'rejected',
+	reason: string,
+	ledger?: string,
+): void {
 	db.transaction((tx) => {
 		tx.update(posTransactions)
-			.set({ status: 'conflict', conflictReason: reason })
+			.set(
+				outcome === 'rejected'
+					? { status: 'rejected', resolutionNote: reason, ledgerName: ledger ?? item.id }
+					: { status: 'conflict', conflictReason: reason, ledgerName: ledger ?? item.id },
+			)
 			.where(eq(posTransactions.id, item.id))
 			.run();
 		tx.delete(outbox).where(eq(outbox.id, item.id)).run();
@@ -251,11 +270,93 @@ export function markPushFailed(item: OutboxItem, error: string): void {
 
 // ---- pull side --------------------------------------------------------------
 
+// sync_meta rows whose name starts with this are device bookkeeping, not
+// pull cursors — never sent to the server (see OWNER_KEY).
+const META_PREFIX = '__';
+
 export function getPullCursors(): PullCursors {
 	const rows = db.select().from(syncMeta).all();
 	const cursors: Record<string, string> = {};
-	for (const r of rows) if (r.cursor) cursors[r.collection] = r.cursor;
+	for (const r of rows) {
+		if (r.cursor && !r.collection.startsWith(META_PREFIX)) cursors[r.collection] = r.cursor;
+	}
 	return cursors as PullCursors;
+}
+
+// ---- ledger reconciliation (pull.transactions) ------------------------------
+
+const LEDGER_KINDS = new Set(['cash_payment', 'goods_issue', 'stock_return']);
+
+// A ledger row for a transaction this device no longer has (wiped by a
+// reset, or recorded on another device) — rebuilt so the agent's recent
+// history and its needs-review state survive. Titles mirror mutations.ts.
+function rebuiltTransaction(t: LedgerTransaction, user: string | null) {
+	const voucher = t.voucherNo
+		? db.select().from(vouchers).where(eq(vouchers.voucherNo, t.voucherNo)).get()
+		: undefined;
+	const hamperId = t.hamper ?? voucher?.hamperId ?? undefined;
+	const hamper = hamperId
+		? db.select({ name: hampers.name }).from(hampers).where(eq(hampers.id, hamperId)).get()
+		: undefined;
+	const recipient = voucher?.beneficiaryNo
+		? `${voucher.beneficiaryNo} · ${t.voucherNo}`
+		: `Voucher ${t.voucherNo ?? ''}`.trim();
+	const kind = t.kind as 'cash_payment' | 'goods_issue' | 'stock_return';
+	return {
+		id: t.clientRef,
+		type: kind,
+		title:
+			kind === 'cash_payment'
+				? 'Cash payout'
+				: (hamper?.name ?? hamperId ?? 'Hamper'),
+		subtitle:
+			kind === 'stock_return' ? `Returned ${t.qty ?? 0} to central warehouse` : recipient,
+		amount: kind === 'cash_payment' ? (t.amount ?? null) : null,
+		qty: kind === 'cash_payment' ? null : (t.qty ?? null),
+		voucherNo: t.voucherNo ?? null,
+		warehouse: t.warehouse ?? null,
+		project: t.project ?? voucher?.project ?? '',
+		assignmentId: voucher?.assignmentId ?? null,
+		createdAt: t.createdAt ? toIso(t.createdAt) : nowIso(),
+		user,
+	};
+}
+
+// Server datetimes arrive as 'YYYY-MM-DD HH:MM:SS' (UTC wall time — that is
+// how the device sent them). Normalise to ISO so list sorting stays consistent.
+function toIso(value: string): string {
+	return value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+}
+
+// The ledger's verdict as local columns.
+function ledgerState(t: LedgerTransaction) {
+	const decision = {
+		ledgerName: t.clientRef,
+		resolution: t.resolution ?? null,
+		resolutionNote: t.resolutionNote ?? null,
+		resolvedBy: t.resolvedBy ?? null,
+		resolvedAt: t.resolvedAt ? toIso(t.resolvedAt) : null,
+	};
+	switch (t.status) {
+		case 'synced':
+			return {
+				...decision,
+				status: 'synced' as const,
+				serverName: t.serverName ?? null,
+				syncedAt: nowIso(),
+				conflictReason: null,
+			};
+		case 'rejected':
+			return { ...decision, status: 'rejected' as const };
+		case 'needs_review':
+			return {
+				...decision,
+				status: 'conflict' as const,
+				conflictReason: t.reason ?? 'Waiting for admin review.',
+			};
+		default:
+			return null; // 'pending': the server will settle it; nothing to say yet
+	}
 }
 
 // Units still queued to leave each warehouse, keyed `warehouse item`.
@@ -290,7 +391,10 @@ function pendingStockDeductions(): Map<string, number> {
 // still-pending local transactions are skipped this round — the server copy
 // lands once the pending push resolves (ARCHITECTURE.md §4) — and pulled stock
 // levels are reduced by whatever is still queued to leave the warehouse.
-export function applyPull(pull: PullResponse): number {
+//
+// `user` is who the pull was made for (the signed-in login email) — stamped on
+// any transaction rebuilt from the ledger.
+export function applyPull(pull: PullResponse, user: string | null = null): number {
 	const pending = db
 		.select({ voucherNo: posTransactions.voucherNo })
 		.from(posTransactions)
@@ -300,6 +404,13 @@ export function applyPull(pull: PullResponse): number {
 		pending.map((p) => p.voucherNo).filter(Boolean),
 	);
 	const queuedOut = pendingStockDeductions();
+	const queuedIds = new Set(
+		db
+			.select({ id: outbox.id })
+			.from(outbox)
+			.all()
+			.map((r) => r.id),
+	);
 
 	let upserts = 0;
 	db.transaction((tx) => {
@@ -430,6 +541,28 @@ export function applyPull(pull: PullResponse): number {
 					},
 				})
 				.run();
+			upserts++;
+		}
+		// Ledger verdicts. Still-queued local work wins (it hasn't been pushed, so
+		// the ledger can't know its latest state); everything else takes the
+		// server's word — that is how an admin's Retry / Force post / Reject
+		// reaches the agent.
+		for (const t of pull.transactions ?? []) {
+			if (!LEDGER_KINDS.has(t.kind) || queuedIds.has(t.clientRef)) continue;
+			const state = ledgerState(t);
+			if (!state) continue;
+			const local = tx
+				.select({ id: posTransactions.id })
+				.from(posTransactions)
+				.where(eq(posTransactions.id, t.clientRef))
+				.get();
+			if (local) {
+				tx.update(posTransactions).set(state).where(eq(posTransactions.id, t.clientRef)).run();
+			} else {
+				tx.insert(posTransactions)
+					.values({ ...rebuiltTransaction(t, user), ...state })
+					.run();
+			}
 			upserts++;
 		}
 		for (const p of pull.posProfiles) {

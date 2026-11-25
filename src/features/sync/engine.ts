@@ -73,7 +73,7 @@ export const syncNow = createAsyncThunk<SyncResult, SyncOptions | void>(
 							markPushAccepted(item, result.serverName);
 							pushed++;
 						} else {
-							markPushRejected(item, result.reason);
+							markPushRejected(item, result.outcome, result.reason, result.ledger);
 							conflicts++;
 						}
 					} catch (e) {
@@ -86,7 +86,8 @@ export const syncNow = createAsyncThunk<SyncResult, SyncOptions | void>(
 			}
 
 			// ---- pull (reference-data delta) ----
-			const pulled = applyPull(await api.pull(getPullCursors()));
+			const user = (getState() as { auth?: { agent?: { email?: string } | null } }).auth?.agent?.email ?? null;
+			const pulled = applyPull(await api.pull(getPullCursors()), user);
 
 			// ---- retention (settings just landed with the pull) ----
 			// Everything still queued was pushed above, so anything now marked
