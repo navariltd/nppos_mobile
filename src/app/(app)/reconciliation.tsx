@@ -124,7 +124,9 @@ export default function Reconciliation() {
 		}
 	};
 
-	const cashTxns = transactions.filter((t) => t.type === 'cash_payment');
+	// Rejected payouts never posted (an admin voided them) — they are not cash
+	// that left the collection point on this shift's record.
+	const cashTxns = transactions.filter((t) => t.type === 'cash_payment' && t.status !== 'rejected');
 	const cashTotal = cashTxns.reduce((s, t) => s + (t.amount ?? 0), 0);
 	const hampersIssued = agentStock.reduce((s, r) => s + r.issuedToday, 0);
 
