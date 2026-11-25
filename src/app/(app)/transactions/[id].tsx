@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import type { TransactionType } from '@/types/domain';
 import { useLocalSearchParams } from 'expo-router';
 import {
+	Ban,
 	CalendarClock,
 	CircleAlert,
 	CircleCheck,
@@ -120,9 +121,21 @@ export default function TransactionDetail() {
 						<AlertDescription className="text-destructive">
 							{txn.conflictReason
 								? `Server: ${txn.conflictReason}`
-								: 'The server rejected this transaction during sync (e.g. voucher limit or validity failed re-validation).'}
-							{'\n'}Held for review — an admin resolves this online; nothing is silently
-							dropped.
+								: 'The server could not post this transaction (e.g. voucher limit or validity failed re-validation).'}
+							{'\n'}It is in the desk's POS Sync Ledger, where an admin retries, force-posts
+							or rejects it. The decision reaches this device on the next sync — nothing is
+							silently dropped.
+						</AlertDescription>
+					</AlertBanner>
+				) : txn.status === 'rejected' ? (
+					<AlertBanner icon={Ban} className="border-border bg-muted">
+						<AlertTitle>Rejected by admin</AlertTitle>
+						<AlertDescription className="text-muted-foreground">
+							Nothing was posted for this transaction
+							{txn.resolvedBy ? ` — rejected by ${txn.resolvedBy}` : ''}
+							{txn.resolvedAt ? ` on ${formatDateTime(txn.resolvedAt)}` : ''}.
+							{txn.resolutionNote ? `\nReason: ${txn.resolutionNote}` : ''}
+							{txn.conflictReason ? `\nOriginally refused: ${txn.conflictReason}` : ''}
 						</AlertDescription>
 					</AlertBanner>
 				) : txn.status === 'pending' ? (
@@ -138,6 +151,11 @@ export default function TransactionDetail() {
 						<AlertTitle className="text-success">Synced</AlertTitle>
 						<AlertDescription className="text-success">
 							Posted to the backend{txn.serverName ? ` as ${txn.serverName}` : ''}.
+							{txn.resolution === 'Force Post'
+								? `\nForce posted by ${txn.resolvedBy ?? 'an admin'}${txn.resolutionNote ? ` — ${txn.resolutionNote}` : ''}.`
+								: txn.resolution === 'Retry'
+									? `\nPosted after an admin retried it${txn.resolvedBy ? ` (${txn.resolvedBy})` : ''}.`
+									: ''}
 						</AlertDescription>
 					</AlertBanner>
 				)}
@@ -167,6 +185,9 @@ export default function TransactionDetail() {
 							<DetailRow icon={FileText} label="Syncs as" value={SYNCS_AS[txn.type]} />
 							{txn.serverName && (
 								<DetailRow icon={CircleCheck} label="Server document" value={txn.serverName} mono />
+							)}
+							{txn.ledgerName && (
+								<DetailRow icon={FileText} label="POS Sync Ledger" value={txn.ledgerName} mono />
 							)}
 						</View>
 					</CardContent>

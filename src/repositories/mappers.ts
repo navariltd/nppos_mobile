@@ -86,6 +86,12 @@ export function toTransaction(r: typeof posTransactions.$inferSelect): PosTransa
 		conflictReason: r.conflictReason ?? undefined,
 		createdAt: r.createdAt,
 		serverName: r.serverName ?? undefined,
+		user: r.user ?? undefined,
+		ledgerName: r.ledgerName ?? undefined,
+		resolution: r.resolution ?? undefined,
+		resolutionNote: r.resolutionNote ?? undefined,
+		resolvedBy: r.resolvedBy ?? undefined,
+		resolvedAt: r.resolvedAt ?? undefined,
 	};
 }
 

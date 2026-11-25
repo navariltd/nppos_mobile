@@ -70,10 +70,16 @@ Request:
 }
 ```
 
+**Every push is recorded in the POS Sync Ledger first.** `nppos/sync_ledger.py`
+creates (and commits) a `POS Sync Ledger` row named by `client_ref` before the
+handler runs, so the desk sees every transaction a device sent — including the
+ones that fail. The row holds the payload, the context (voucher, profile,
+warehouse, opening entry, amount), the outcome and the posted documents.
+
 **Idempotency (hard requirement):** the device re-pushes the same `client_ref`
-whenever a response is lost after the server already committed, so every
-handler must answer a retry with **accepted + the existing doc's name**, never
-a second document. Two mechanisms, by doctype:
+whenever a response is lost after the server already committed. The ledger row
+is the first check for every kind: a settled row answers from the ledger
+without running a handler. Underneath it, the handlers keep their own checks:
 
 - **Entitlement Redemption, Stock Entry** — `client_ref` is a unique Data field
   on the doc (installed by `nppos/install.py`); look the retry up by it. These
@@ -90,21 +96,45 @@ a second document. Two mechanisms, by doctype:
 (whitelisted methods are transactional by default — don't `frappe.db.commit()`
 midway).
 
-Response `message` — exactly one of:
+Response `message` — exactly one of (all HTTP 200, all carry `ledger`):
 
 ```json
-{ "status": "accepted", "server_name": "ACC-PAY-2026-00119",
+{ "status": "accepted", "server_name": "ACC-PAY-2026-00119", "ledger": "6f0f2c6e-…",
   "related": { "entitlement_redemption": "ENT-RED-2026-07-0001" } }   // optional
 
-{ "status": "rejected", "reason": "Voucher V-2026-88232 already redeemed twice." }
+{ "status": "needs_review", "reason": "Entitlement Voucher V-2026-88232 is already Redeemed.",
+  "ledger": "6f0f2c6e-…" }
+
+{ "status": "rejected", "reason": "Duplicate of a paper voucher", "ledger": "6f0f2c6e-…" }
 ```
 
-- `rejected` (HTTP 200) = **valid business refusal** (voucher over limit,
-  expired, entitlement revoked). The device marks the transaction `conflict`
-  for admin review and will NOT retry it.
-- HTTP 5xx / network = transient; the device backs off and retries the same
-  `client_ref`.
-- HTTP 401/403 = auth problem; the device stops and surfaces it.
+- `needs_review` = the handler failed for **any** reason (business rule,
+  missing data, permission, a bug). The work is rolled back to a savepoint and
+  the ledger row is parked as **Needs Review** with the error and traceback.
+  The device marks the transaction `conflict` and will NOT retry it. A re-push
+  of a Needs Review row does not re-run it — only an admin does.
+- `rejected` = an admin already rejected this row in the desk (final). The
+  device marks it `rejected`.
+- HTTP 5xx = transient DB failure (deadlock, lock timeout, read-only) — the
+  ledger row stays **Pending** with the attempt counted; the device backs off
+  and retries the same `client_ref`. Network errors are handled the same way.
+
+### Admin review (desk → device)
+
+An admin opens **POS Sync Ledger** (NPPOS workspace › Needs Review) and uses the
+form's **Resolve** menu:
+
+| Action | Method | Effect |
+|---|---|---|
+| Retry | `nppos.sync_ledger.retry(name)` | Re-runs the payload with the normal rules — after the admin fixed the cause (stock, settings, the voucher). |
+| Force post | `nppos.sync_ledger.force_post(name, reason)` | Re-runs it overriding the **voucher** rules only — status, use limit, validity (`frappe.flags.nppos_force_post`). Payment proof, agent balance, stock levels and the disbursement-cycle guard still apply. |
+| Reject | `nppos.sync_ledger.reject(name, reason)` | Nothing is posted; the row is final. |
+
+Retry and Force post run **as the agent who recorded the transaction**, so
+the POS Opening Entry user, duplicate checks and permissions match the
+original push. The outcome reaches the device on its next pull
+(`transactions`, below). Close-out photos are attached to the ledger row as a
+file (not kept in the payload JSON) and re-sent on a retry.
 
 ### Payload kinds → ERPNext documents
 
@@ -144,10 +174,27 @@ client-side ids resolved via `client_ref`.
 Delta pull of the authenticated agent's slice. Request:
 
 ```json
-{ "cursors": { "beneficiaries": "2026-07-20T18:00:00Z", ... } }
+{ "cursors": { "vouchers": "2026-07-20 18:00:00", "warehouses": "Rabak - AIGT,Kosti - AIGT", ... },
+  "client": "mobile" }
 ```
 
-Missing/empty cursor for a collection = first pull → return the full set.
+Missing/empty cursor for a collection = first pull → return the full set,
+bounded by the POS App setting **Days Of History Synced** (`history_days`,
+default 30): vouchers still usable plus anything modified within the window.
+
+- `warehouses` is not a timestamp: it is the warehouse set the device last
+  pulled for, echoed back. Any warehouse missing from it (a different user on
+  the device, a user newly added to a POS profile, an older build) gets its
+  full bounded voucher set rather than a delta — a delta would skip vouchers
+  created before the cursor.
+- `client: "mobile"` omits each voucher's full `doc` (the web POS needs it, the
+  app doesn't — it was most of the payload).
+- `transactions` returns this user's POS Sync Ledger rows changed since the
+  cursor (or within `history_days`): `client_ref`, `status` (`pending` |
+  `synced` | `needs_review` | `rejected`), `reason`, `resolution`,
+  `resolution_note`, `resolved_by`, `resolved_at`, `server_name`, voucher /
+  warehouse / amount / qty. Vouchers those rows name are re-sent too, so a
+  rejected redemption gives its use back on the device.
 Filter every collection by `modified > cursor` AND by the agent (their ADAs,
 their vouchers, their warehouses' bins, POS Profiles where the user is an
 applicable user **and** `enable_entitlement_distribution = 1`).
@@ -210,9 +257,10 @@ Goods→`hamper`, Cash→`cash`.
 1. `client_ref` — unique Data field on Entitlement Redemption and Stock Entry
    (`nppos/install.py`, run via `after_migrate`). POS Opening/Closing Entry use
    their natural keys instead — see Idempotency above.
-2. Voucher re-validation on redemption (status/validity/max-uses) — currently
-   missing in the Entitlement Redemption controller (NPPOS_WEB.md gaps 1–3);
-   `sync_push` must enforce it and answer `rejected` on failure.
+2. Voucher re-validation on redemption (status/validity/max-uses) — done in
+   `EntitlementRedemption.update_voucher_status_on_submit`; validity is judged
+   on the day the agent recorded the transaction. A failure parks the push as
+   Needs Review.
 3. Redemption should update the voucher's status (gap 1) so `sync_pull`
    reflects reality on other devices.
 4. The three methods above, `@frappe.whitelist()`, in the nppos app
@@ -222,7 +270,8 @@ Goods→`hamper`, Cash→`cash`.
 
 - Push is FIFO per device; a transport failure stops the flush (order
   preserved), backoff = 5s·2^attempt capped at 10min.
-- `rejected` → local status `conflict` + reason shown in "needs review";
-  resolution is an **admin** action, done **online**.
+- `needs_review` → local status `conflict` + reason shown in "needs review";
+  `rejected` → local `rejected`. Resolution is an **admin** action in the desk
+  (POS Sync Ledger); the pull's `transactions` carries the outcome back.
 - Pull upserts skip vouchers/entitlements that still have pending local
   pushes ("local pending wins" until resolved).

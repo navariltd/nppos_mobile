@@ -22,6 +22,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 	{ key: 'pending', label: 'Pending' },
 	{ key: 'synced', label: 'Synced' },
 	{ key: 'conflict', label: 'Needs review' },
+	{ key: 'rejected', label: 'Rejected' },
 ];
 
 export default function Transactions() {
@@ -42,22 +43,25 @@ export default function Transactions() {
 				</Text>
 			</View>
 
-			<ToggleGroup
-				type="single"
-				value={filter}
-				onValueChange={(v) => setFilter((v as Filter) ?? 'all')}
-				className="justify-start gap-2"
-			>
-				{FILTERS.map((f) => (
-					<ToggleGroupItem
-						key={f.key}
-						value={f.key}
-						className="border-border bg-card h-9 rounded-full border px-3.5"
-					>
-						<Text className="text-xs font-medium">{f.label}</Text>
-					</ToggleGroupItem>
-				))}
-			</ToggleGroup>
+			{/* Horizontal scroll: five filters don't fit a narrow phone in one row. */}
+			<ScrollView horizontal showsHorizontalScrollIndicator={false} className="grow-0">
+				<ToggleGroup
+					type="single"
+					value={filter}
+					onValueChange={(v) => setFilter((v as Filter) ?? 'all')}
+					className="justify-start gap-2"
+				>
+					{FILTERS.map((f) => (
+						<ToggleGroupItem
+							key={f.key}
+							value={f.key}
+							className="border-border bg-card h-9 rounded-full border px-3.5"
+						>
+							<Text className="text-xs font-medium">{f.label}</Text>
+						</ToggleGroupItem>
+					))}
+				</ToggleGroup>
+			</ScrollView>
 
 			{list.length === 0 ? (
 				<Card className="py-0">

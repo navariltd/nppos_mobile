@@ -35,8 +35,9 @@ entitlement row at sync time. Voucher status is derived from what's left to
 redeem: all entitlements issued → `redeemed`, else `partially_redeemed`.
 The backend still has **no max-uses / transaction-count field**, but the rule is
 now enforced on both sides: `EntitlementRedemption.update_voucher_status_on_submit`
-counts submitted redemptions and throws past `MAX_USES = 2` (which `sync_push`
-turns into a `rejected` → the device parks the row for admin review), and marks
+counts submitted redemptions and throws past the configured limit (which
+`sync_push` parks in the POS Sync Ledger as *Needs Review* → the device shows the
+row as needing review), and marks
 the voucher Redeemed once the uses are spent even with value left on it. The
 device applies the same rule locally before queueing (AGENTS.md rule 4).
 
@@ -92,10 +93,15 @@ Mobile is currently the furthest-along POS client.
 Built by `nppos/sync_pull.py`, scoped to the **union of the warehouses** on the
 agent's distribution-enabled POS profiles — never by user/employee.
 
-- **vouchers** are delta-filtered on `modified`, plus any voucher touched by a
-  redemption since the cursor (a redemption does not bump the voucher's own
-  `modified`). Each row carries `warehouse` so the device can scope it to one
-  profile, and a derived `status` that folds in expiry and the 2-use rule.
+- **vouchers** are delta-filtered **per warehouse**: for a warehouse the device
+  already pulled for (the `warehouses` cursor it echoes), vouchers modified since
+  the cursor plus any touched by a redemption or a ledger decision; for any
+  other warehouse, the full set bounded by `history_days` (still usable + touched
+  in the window). Each row carries `warehouse` so the device can scope it to one
+  profile, and a derived `status` that folds in expiry and the use limit.
+  `client=mobile` omits the full voucher `doc`.
+- **transactions** — the user's POS Sync Ledger rows (outcome + admin decision);
+  see `docs/SYNC_API.md`.
 - **agent_stock** and **hampers** are **full snapshots on every pull**, never
   derived from the voucher delta. This is load-bearing: adding stock in the desk
   touches only the `Bin`, so an item list derived from changed vouchers starves
@@ -121,10 +127,9 @@ agent's distribution-enabled POS profiles — never by user/employee.
 
 ## Known gaps to raise with the backend team
 
-1. No validation that the voucher is within its validity window at redemption
-   (the device checks `valid_from`/`valid_to` locally; the backend does not).
-   Nothing flips a voucher to `Expired` on its `valid_to` either — the pull
-   derives that status rather than reading it.
+1. Nothing flips a voucher to `Expired` on its `valid_to` — the pull derives
+   that status rather than reading it. (Validity itself IS now checked at
+   redemption submit, on the day the agent recorded it.)
 2. No whitelisted search/redeem API beyond the sync methods — screens that want
    live lookups would use plain REST on the doctypes. **The whitelisted sync
    methods (`nppos.sync_api.login` / `sync_push` / `sync_pull`) live in the nppos

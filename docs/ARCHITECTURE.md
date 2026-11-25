@@ -94,10 +94,10 @@ erDiagram
 | `beneficiaries` | pulled | the parties behind the agent's vouchers — name, ID number, status, household size. Identity confirmation at issue time only, never the case file. Walk-in vouchers have no row |
 | `agent_stock` | pulled + decremented locally | agent-warehouse levels per finished item. `on_hand` comes from the server's Bin as a **full snapshot every pull** (stock changes never touch a voucher, so a delta-derived list would never carry them), reduced by whatever is still queued in the outbox to leave that warehouse. `issued_today` is a device-side day tally the backend has no notion of — set on insert, never overwritten by a pull |
 | `voucher_redemptions` | local-first | one row per voucher use → backend Entitlement Redemption; links straight to the voucher, carries type/amount/qty |
-| `pos_transactions` | local-first | uuid PK, type (`goods_issue` \| `cash_payment` \| `stock_return`), refs (voucher no, `project` string, `assignment_id`), `warehouse` (working context at record time — scopes the activity list), amount/qty, status: `pending` → `synced` \| `conflict`, created_at, synced_at. Synced rows beyond the retention setting are pruned after each sync (`pruneSyncedTransactions`); pending, needs-review and open-shift rows never are |
+| `pos_transactions` | local-first | uuid PK, type (`goods_issue` \| `cash_payment` \| `stock_return`), refs (voucher no, `project` string, `assignment_id`), `warehouse` (working context at record time — scopes the activity list), amount/qty, `user` (who recorded it — every list and count is scoped by user **and** warehouse), status: `pending` → `synced` \| `conflict` (needs review, parked in the desk's POS Sync Ledger) → `synced` \| `rejected` (admin decision, arrives on the pull), `ledger_name` + the admin's `resolution`/`resolution_note`/`resolved_by`/`resolved_at`, created_at, synced_at. Synced and rejected rows beyond the retention setting are pruned after each sync (`pruneSyncedTransactions`); pending, needs-review and open-shift rows never are. Ledger rows the device has no copy of (wiped, other device) are rebuilt from the pull |
 | `pos_profiles`, `pos_sessions` | pulled / local | POS Profile + shift (Opening/Closing Entry). A session row only survives if its POS Opening Entry reached the server — `openPosSession` pushes immediately and `discardUnsyncedPosSession` rolls it back otherwise, so `opening_server_name` is set for every open shift. `closing_photo_uri` keeps the local copy of the optional close-out photo attached to the closing entry |
 | `outbox` | local | uuid, payload JSON, attempt count, next_retry_at, last_error |
-| `sync_meta` | local | per-collection cursors/timestamps for delta pulls. The newest `last_pulled_at` is also "when this device last synced", which the offline-limit rule measures against |
+| `sync_meta` | local | per-collection cursors/timestamps for delta pulls, plus `warehouses` (the set the last pull covered — the server sends a full voucher set for any warehouse missing from it) and `__user` (who the reference data belongs to; never sent). The newest `last_pulled_at` is also "when this device last synced", which the offline-limit rule measures against |
 | `app_settings` | pulled | server-driven app configuration (AIGT HDR Settings › POS App) as key/JSON-value rows, **replaced wholesale on every pull** — no cursor, no local edits. Typed via `src/lib/pos-settings.ts`, read through `useSettings()`/`getSettings()` |
 
 Dropped in the voucher-centric refactor: `projects`, `disbursement_orders`,
@@ -118,10 +118,11 @@ sequenceDiagram
     Note over UI: receipt shown immediately (offline OK)
     SE-->>SE: triggers: NetInfo online · app foreground · interval · manual
     SE->>BE: POST outbox item (uuid as idempotency key)
+    Note over BE: POS Sync Ledger row recorded (committed) before posting
     alt accepted
         BE-->>SE: ok (server doc name)
         SE->>DB: mark synced, delete outbox row
-    else rejected (e.g. voucher already used twice elsewhere)
+    else needs_review (any failure — parked in the ledger for an admin)
         BE-->>SE: validation error
         SE->>DB: mark transaction conflict (never delete)
         SE-->>UI: surface in "Needs review"
@@ -168,7 +169,8 @@ Rules:
 
 - **Idempotency**: the client UUID travels with every push; the backend must treat re-sends as no-ops. Retries are therefore always safe.
 - **Ordering**: flush outbox FIFO per beneficiary/voucher so dependent entries arrive in order.
-- **Conflicts**: server rejections (double-spent voucher, revoked entitlement) flag the local transaction `conflict` for supervised resolution — nothing is silently discarded. **Resolution is an admin action and happens online** (decided): agents only see the "needs review" state; an admin resolves the conflict against live backend data (from the admin section or the backend UI), and the resolution syncs back on the next pull.
+- **Conflicts — the POS Sync Ledger.** Every push is recorded server-side in a `POS Sync Ledger` row (nppos app, named by `client_ref`) **before** it is attempted, so nothing a device sends can vanish. A push that fails for any reason (double-spent voucher, expired voucher, short stock, a bug) is rolled back and parked as **Needs Review** with the error; the device flags its row `conflict`. **Resolution is an admin action in the desk** (decided): Retry (after fixing the cause), Force post (overrides only the voucher rules — status, use limit, validity — with a reason) or Reject (nothing posted, final). The ledger keeps who decided what and when. The verdict reaches the device on its next pull (`transactions`), flipping the row to `synced` or `rejected`; vouchers named by those rows are re-sent so their uses correct themselves. Contract: `docs/SYNC_API.md`.
+- **Scoping across users.** A device can be shared. Reference data (vouchers, beneficiaries, assignments, hampers/BOMs, stock) belongs to the signed-in user's warehouses: sign-in as a **different** user wipes it and every cursor, so the first pull is a full one (bounded to the POS App "Days Of History Synced" window) — refused while the outbox holds the previous user's work. User-owned rows (transactions, redemptions, sessions) are kept and stamped with `user`; every list and count filters by it (`useWorkScope`).
 - **Card flow is excluded**: card validate/balance/withdraw calls the bank API in real time and is disabled offline.
 - **Pull strategy**: delta by `modified_since` cursor per collection (`sync_meta`); full re-pull as recovery escape hatch.
 
@@ -292,7 +294,7 @@ Dependency direction: `app → features/components/hooks → repositories → db
 1. **Offline login** — first login must be online (fetch token + assignments); afterwards re-auth with a locally stored PIN (hash in expo-secure-store). Define token refresh/expiry behavior when offline for days.
 2. **Dev client vs Expo Go** — Expo Go is fine until we need SQLCipher, camera/QR voucher scanning, or receipt printers; plan the EAS dev-client switch as its own step.
 3. **Voucher capture UX** — ~~manual entry now; QR/barcode scan (expo-camera) later~~ **done: scan on the Search screen** (`src/components/domain/QrScanner.tsx`, expo-camera `CameraView`). The backend generates one QR per Entitlement Voucher encoding its voucher number and attaches it to the voucher's `image` field (`/files/<voucherNo>-qr.png`), which the device pulls and can render. Manual entry stays as the fallback. Still open: checksummed voucher numbers to catch typos on manual entry.
-4. **Conflict resolution UX** — ~~who clears a `conflict` transaction (agent vs admin)~~ **decided: admin, online-only**. Still open: the exact audit trail (who resolved what, when, and how it's recorded backend-side).
+4. **Conflict resolution UX** — ~~who clears a `conflict` transaction (agent vs admin)~~ **decided: admin, online-only** — ~~the exact audit trail~~ **done: the POS Sync Ledger** (who resolved what, when, why; track-changes on the row).
 5. **Multi-device / reassignment** — same agent on two devices, or beneficiary reassigned mid-day: server-side revalidation is the backstop; decide how aggressively to re-pull.
 6. **Clock integrity** — offline timestamps come from the device; record both device time and sync time, never trust device time for validity-window enforcement alone. The max-hours-offline rule (`syncFreshness`) compares the device clock against the last pull stamp, so a device set back far enough reads as fresh — server-side revalidation stays the backstop.
 7. **Receipts** — on-screen confirmation now; thermal-printer support later (drives dev-client decision).
