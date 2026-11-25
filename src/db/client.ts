@@ -29,6 +29,14 @@ export const sqlite = openDatabaseSync(DB_NAME, {
 });
 
 sqlite.execSync('PRAGMA foreign_keys = ON;');
+// WAL: readers never block a writer's COMMIT (and vice versa). In the default
+// rollback journal a COMMIT needs every other connection to have stopped
+// reading — and in dev a JS reload can leave the previous runtime's connection
+// open mid-read, so every later pull failed at COMMIT with "database is
+// locked". busy_timeout makes any remaining contention wait instead of failing
+// on the first try.
+sqlite.execSync('PRAGMA journal_mode = WAL;');
+sqlite.execSync('PRAGMA busy_timeout = 5000;');
 
 export const db = drizzle(sqlite);
 
