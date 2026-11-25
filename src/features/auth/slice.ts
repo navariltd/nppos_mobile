@@ -5,7 +5,13 @@
 // login are upserted into SQLite (reference data), not kept here.
 
 import { selectIsOnline, type SyncState } from '@/features/sync/slice';
-import { pendingOutboxSummary, replacePosProfiles } from '@/repositories';
+import {
+	claimDevice,
+	deviceOwner,
+	pendingOutboxSummary,
+	replacePosProfiles,
+	resetReferenceData,
+} from '@/repositories';
 import { getApi } from '@/services/api';
 import type { Agent, Role } from '@/types/domain';
 import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit';
@@ -46,6 +52,25 @@ export const signIn = createAsyncThunk(
 			email: req.email,
 			password: req.password,
 		});
+		// A different user on this device: the reference data and pull cursors
+		// on it were pulled for someone else's warehouses — reset them so the
+		// first pull is a full one for THIS user. Their own transactions and
+		// sessions stay, filtered out of this user's view by `user`.
+		// Queued work belongs to the previous user and must leave under THEIR
+		// token, so refuse rather than push it as this one (sign-out already
+		// requires an empty outbox; this is the backstop).
+		const owner = deviceOwner();
+		const user = agent.email || req.email;
+		if (owner !== user) {
+			const { count } = pendingOutboxSummary();
+			if (owner && count > 0) {
+				throw new Error(
+					`${count} unsynced transaction${count === 1 ? '' : 's'} on this device belong${count === 1 ? 's' : ''} to ${owner}. Sign in as ${owner} and sync before another user signs in.`,
+				);
+			}
+			resetReferenceData();
+			claimDevice(user);
+		}
 		// Token → keystore + adapter memory (never Redux/AsyncStorage).
 		await saveToken(token);
 		getApi().setToken?.(token);

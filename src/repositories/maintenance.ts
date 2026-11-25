@@ -5,6 +5,8 @@
 // Only rows the server already holds are candidates:
 // - `pending` rows are still in the outbox — deleting one loses the work.
 // - `conflict` rows are waiting for an admin — they are the review queue.
+// (`rejected` rows are settled — an admin decided, nothing was posted — and
+// age out like synced ones.)
 // - rows of the OPEN session are what the reconciliation screen counts.
 // Vouchers, stock and sessions are never pruned: a voucher's uses/remaining
 // come from the server, so old history rows are not needed for correctness.
@@ -37,7 +39,7 @@ export function pruneSyncedTransactions(keep: number): number {
 	const victims = db
 		.select({ id: posTransactions.id })
 		.from(posTransactions)
-		.where(and(eq(posTransactions.status, 'synced'), notInOpenSession))
+		.where(and(inArray(posTransactions.status, ['synced', 'rejected']), notInOpenSession))
 		.orderBy(asc(posTransactions.createdAt))
 		.limit(excess)
 		.all()

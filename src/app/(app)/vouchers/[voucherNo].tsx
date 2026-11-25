@@ -1,4 +1,5 @@
 import { VoucherStatusBadge } from '@/components/domain/badges';
+import { useCurrentUser } from '@/hooks/scope';
 import { HamperContentsDialog } from '@/components/domain/HamperContentsDialog';
 import { Screen } from '@/components/domain/Screen';
 import { EmptyState, SectionLabel, Stat } from '@/components/domain/widgets';
@@ -79,7 +80,7 @@ export default function VoucherDetail() {
 	const hamper = useHamper(voucher?.hamperId);
 	const beneficiary = useBeneficiary(voucher?.beneficiaryNo);
 	const redemptions = useRedemptionsForVoucher(voucher?.id);
-	const session = useOpenPosSession();
+	const session = useOpenPosSession(useCurrentUser());
 	const profile = useActivePosProfile();
 	const settings = useSettings();
 	const freshness = useSyncFreshness();

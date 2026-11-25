@@ -14,6 +14,7 @@
 // The `logout` thunk refuses on its own when the outbox is non-empty, as a
 // backstop for any dispatch that bypasses this hook.
 
+import { useCurrentUser } from '@/hooks/scope';
 import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
 import { useSession } from '@/hooks/session';
 import {
@@ -39,7 +40,7 @@ function queuedReason(): string | null {
 export function useGuardedSignOut() {
 	const dispatch = useAppDispatch();
 	const { signOut } = useSession();
-	const openSession = useOpenPosSession();
+	const openSession = useOpenPosSession(useCurrentUser());
 	const settings = useSettings();
 	const preflight = useShiftPreflight();
 	const [isClosing, setIsClosing] = React.useState(false);

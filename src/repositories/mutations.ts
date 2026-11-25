@@ -24,8 +24,9 @@ import {
 import { maxUsesFor } from '@/lib/pos-settings';
 import { uuid } from '@/lib/uuid';
 import type { ClosingPhoto } from '@/services/api';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { getSettings, staleSyncMessage, syncFreshness } from './settings';
+import { deviceOwner } from './sync';
 
 export type MutationResult = { ok: true; transactionId: string } | { ok: false; reason: string };
 
@@ -38,7 +39,18 @@ function today(): string {
 }
 
 function getOpenSession() {
-	return db.select().from(posSessions).where(eq(posSessions.status, 'open')).get();
+	// The signed-in user's shift — another user's can never be redeemed against.
+	const owner = deviceOwner();
+	return db
+		.select()
+		.from(posSessions)
+		.where(
+			and(
+				eq(posSessions.status, 'open'),
+				owner ? eq(posSessions.user, owner) : isNull(posSessions.user),
+			),
+		)
+		.get();
 }
 
 // The open shift plus the POS Opening Entry name every redemption in it is
@@ -191,6 +203,7 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 				assignmentId: voucher.assignmentId,
 				status: 'pending',
 				createdAt: nowIso(),
+				user: deviceOwner(), // who recorded it — every list is scoped by it
 			})
 			.run();
 
@@ -204,6 +217,7 @@ export function redeemVoucherCash(voucherId: string, amount: number): MutationRe
 				type: 'cash',
 				amount,
 				redeemedAt: nowIso(),
+				user: deviceOwner(), // who recorded it — every list is scoped by it
 			})
 			.run();
 
@@ -283,6 +297,7 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 				assignmentId: voucher.assignmentId,
 				status: 'pending',
 				createdAt: nowIso(),
+				user: deviceOwner(), // who recorded it — every list is scoped by it
 			})
 			.run();
 
@@ -309,6 +324,7 @@ export function redeemVoucherGoods(voucherId: string, qty: number): MutationResu
 				type: 'hamper',
 				qty,
 				redeemedAt: nowIso(),
+				user: deviceOwner(), // who recorded it — every list is scoped by it
 			})
 			.run();
 
@@ -380,6 +396,7 @@ export function returnStock(warehouse: string, hamperId: string, qty: number): M
 				assignmentId: assignment?.id,
 				status: 'pending',
 				createdAt: nowIso(),
+				user: deviceOwner(), // who recorded it — every list is scoped by it
 			})
 			.run();
 		tx.update(agentStock)
@@ -423,6 +440,7 @@ export function openPosSession(posProfileId: string): MutationResult {
 				posProfileId: profile.id,
 				status: 'open',
 				openedAt: nowIso(),
+				user: deviceOwner(), // who recorded it — every list is scoped by it
 				openingFloat: OPENING_FLOAT,
 			})
 			.run();

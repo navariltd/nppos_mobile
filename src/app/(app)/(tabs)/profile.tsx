@@ -1,4 +1,5 @@
 import { Screen } from '@/components/domain/Screen';
+import { useWorkScope } from '@/hooks/scope';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -86,8 +87,9 @@ export default function Profile() {
 	const { name, role, agent, setRole } = useSession();
 	const { isOnline, deviceOnline, forcedOffline, setForcedOffline } = useOnline();
 	const { mode, scheme, setMode } = useThemeMode();
-	const { pending, conflicts } = useSyncCounts();
-	const openSession = useOpenPosSession();
+	const scope = useWorkScope();
+	const { pending, conflicts } = useSyncCounts(scope);
+	const openSession = useOpenPosSession(scope.user);
 	const posProfile = useActivePosProfile();
 	const guardedSignOut = useGuardedSignOut();
 

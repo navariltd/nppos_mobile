@@ -1,4 +1,5 @@
 import { Screen } from '@/components/domain/Screen';
+import { useWorkScope } from '@/hooks/scope';
 import { SectionLabel, Stat } from '@/components/domain/widgets';
 import { Alert as AlertBanner, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
@@ -57,8 +58,9 @@ export default function Reconciliation() {
 
 	const profile = useActivePosProfile();
 	const agentStock = useAgentStock(profile?.warehouse);
-	const { pending, conflicts } = useSyncCounts();
-	const session = useOpenPosSession();
+	const scope = useWorkScope();
+	const { pending, conflicts } = useSyncCounts(scope);
+	const session = useOpenPosSession(scope.user);
 	const transactions = useSessionTransactions(session?.id);
 	const preflight = useShiftPreflight();
 	const { format } = useCurrency();

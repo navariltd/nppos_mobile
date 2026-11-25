@@ -1,4 +1,5 @@
 import { Icon } from '@/components/ui/icon';
+import { useWorkScope } from '@/hooks/scope';
 import { Text } from '@/components/ui/text';
 import { useOnline } from '@/hooks/online';
 import { useSyncCounts } from '@/repositories';
@@ -19,7 +20,7 @@ import Animated, {
 // `onDark` renders it for the evergreen canopy header.
 export function SyncStatusPill({ onDark = false }: { onDark?: boolean }) {
 	const { isOnline } = useOnline();
-	const { pending, conflicts } = useSyncCounts();
+	const { pending, conflicts } = useSyncCounts(useWorkScope());
 	const syncing = isOnline && pending > 0;
 
 	const rotation = useSharedValue(0);

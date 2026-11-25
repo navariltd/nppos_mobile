@@ -3,6 +3,7 @@
 // nothing. Must be mounted BELOW DbProvider — the engine reads SQLite.
 // Manual "Sync now" (Profile) and reconciliation dispatch syncNow themselves.
 
+import { claimDevice, deviceOwner } from '@/repositories';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import * as React from 'react';
 import { AppState } from 'react-native';
@@ -17,6 +18,16 @@ export function SyncManager() {
 	const dispatch = useAppDispatch();
 	const isOnline = useAppSelector(selectIsOnline);
 	const isAuthenticated = useAppSelector((s) => s.auth.isAuthenticated);
+	const email = useAppSelector((s) => s.auth.agent?.email);
+
+	// Upgrade path: a build from before rows carried a user, still signed in.
+	// Those rows were written by this session's user, so claim them (and the
+	// device) before the first sync. Here, not in AuthBootstrap: it must run
+	// after DbProvider has applied the migration that adds the columns. Declared
+	// first: effects run in order, so this lands before any sync trigger below.
+	React.useEffect(() => {
+		if (isAuthenticated && email && !deviceOwner()) claimDevice(email, true);
+	}, [isAuthenticated, email]);
 
 	const kick = React.useCallback(() => {
 		if (!isAuthenticated || !isOnline) return;

@@ -7,6 +7,7 @@
 // the session and pushes it straight away, so the POS Opening Entry exists
 // server-side before the first redemption references it.
 
+import { useCurrentUser } from '@/hooks/scope';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -40,7 +41,7 @@ export function PosSessionCard() {
 	const router = useRouter();
 	const dispatch = useAppDispatch();
 	const profile = useActivePosProfile();
-	const session = useOpenPosSession();
+	const session = useOpenPosSession(useCurrentUser());
 	const preflight = useShiftPreflight();
 	const [dialogOpen, setDialogOpen] = React.useState(false);
 

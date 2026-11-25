@@ -1,4 +1,5 @@
 import { PosSessionCard } from '@/components/domain/PosSessionCard';
+import { useWorkScope } from '@/hooks/scope';
 import { SyncStatusPill } from '@/components/domain/SyncStatusPill';
 import { ActionTile, ListRow, SectionLabel } from '@/components/domain/widgets';
 import { Card } from '@/components/ui/card';
@@ -32,7 +33,7 @@ export default function Dashboard() {
 	const isFocused = useIsFocused();
 	const { role, agent } = useSession();
 	const profile = useActivePosProfile();
-	const { pending, conflicts } = useSyncCounts();
+	const { pending, conflicts } = useSyncCounts(useWorkScope());
 	const dispatch = useAppDispatch();
 	// Setting 1: past the configured offline limit the device stops recording
 	// new work until it syncs, so say so where the agent starts their day.

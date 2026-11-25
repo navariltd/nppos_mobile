@@ -27,7 +27,7 @@ import type {
 	PullResponse,
 } from '@/services/api';
 import type { PosProfile } from '@/types/domain';
-import { asc, eq, isNull, lte, or, sql } from 'drizzle-orm';
+import { asc, eq, isNull, lte, ne, or, sql } from 'drizzle-orm';
 
 export interface OutboxItem {
 	id: string;
@@ -110,6 +110,59 @@ export function resetLocalData(): void {
 		tx.delete(posProfiles).run();
 		tx.delete(syncMeta).run();
 		tx.delete(appSettings).run();
+	});
+}
+
+// ---- device owner (who the reference data belongs to) -----------------------
+
+// sync_meta row naming the user the device's reference data + cursors were
+// pulled for. Every user-owned row a mutation writes is stamped with it.
+const OWNER_KEY = '__user';
+
+export function deviceOwner(): string | null {
+	return (
+		db.select({ cursor: syncMeta.cursor }).from(syncMeta).where(eq(syncMeta.collection, OWNER_KEY)).get()
+			?.cursor ?? null
+	);
+}
+
+// Record who the device now belongs to. `claimLegacy` attributes rows written
+// before rows carried a user (user IS NULL) to them — only safe when that user
+// was demonstrably the one signed in when those rows were written (an upgrade
+// with the session still open); otherwise they stay unowned and hidden.
+export function claimDevice(user: string, claimLegacy = false): void {
+	db.transaction((tx) => {
+		tx.insert(syncMeta)
+			.values({ collection: OWNER_KEY, cursor: user, lastPulledAt: null })
+			.onConflictDoUpdate({ target: syncMeta.collection, set: { cursor: user } })
+			.run();
+		if (claimLegacy) {
+			tx.update(posTransactions).set({ user }).where(isNull(posTransactions.user)).run();
+			tx.update(posSessions).set({ user }).where(isNull(posSessions.user)).run();
+			tx.update(voucherRedemptions).set({ user }).where(isNull(voucherRedemptions.user)).run();
+		}
+	});
+}
+
+// A different user is signing in: drop the warehouse/reference data pulled for
+// the previous one and every pull cursor, so the next pull is a full one
+// (bounded server-side to the history window) for THIS user's warehouses.
+//
+// Kept: user-owned rows (pos_transactions, voucher_redemptions, pos_sessions —
+// filtered by user, not deleted), pos_profiles (login replaces them),
+// app_settings (replaced every pull) and the outbox (sign-in refuses a
+// different user while it is non-empty). Children before parents (FKs on).
+export function resetReferenceData(): void {
+	db.transaction((tx) => {
+		tx.delete(agentStock).run();
+		tx.delete(vouchers).run();
+		tx.delete(beneficiaries).run();
+		tx.delete(bomItems).run();
+		tx.delete(boms).run();
+		tx.delete(hamperItems).run();
+		tx.delete(hampers).run();
+		tx.delete(assignments).run();
+		tx.delete(syncMeta).where(ne(syncMeta.collection, OWNER_KEY)).run();
 	});
 }
 
@@ -270,8 +323,8 @@ export function markPushFailed(item: OutboxItem, error: string): void {
 
 // ---- pull side --------------------------------------------------------------
 
-// sync_meta rows whose name starts with this are device bookkeeping, not
-// pull cursors — never sent to the server (see OWNER_KEY).
+// sync_meta rows whose name starts with this are device bookkeeping (OWNER_KEY),
+// not pull cursors — never sent to the server.
 const META_PREFIX = '__';
 
 export function getPullCursors(): PullCursors {

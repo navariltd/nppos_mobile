@@ -272,29 +272,46 @@ export function useAgentStock(warehouse?: string): AgentStockRow[] {
 
 // ---- transactions ------------------------------------------------------------------
 
-// The agent's transactions, scoped to the POS profile they are working under.
-// Pass the active profile's warehouse: the device accumulates the transactions
-// of every profile it has ever worked, and showing another warehouse's payouts
-// under this one misrepresents the shift. Omitting it returns everything (the
-// admin/debug view). Rows recorded before transactions carried a warehouse have
-// none and therefore fall outside any scoped list.
+// Who and where the agent is working: the signed-in user (login email) and the
+// active POS profile's warehouse. Every user-owned list and count is filtered
+// by BOTH, so one user's work — or their needs-review rows — never shows for
+// another, and the dashboard banner counts exactly what the list it opens shows.
+// Get it from useWorkScope() (src/hooks/scope.ts).
+export interface WorkScope {
+	user?: string | null;
+	warehouse?: string | null;
+}
+
+function scoped(scope: WorkScope) {
+	// No user → match nothing rather than everything: an unscoped query is
+	// exactly the cross-user leak this exists to stop.
+	return and(
+		eq(posTransactions.user, scope.user ?? NONE),
+		scope.warehouse ? eq(posTransactions.warehouse, scope.warehouse) : undefined,
+	);
+}
+
+// The signed-in user's transactions, scoped to the POS profile they are working
+// under: the device accumulates the transactions of every user and profile it
+// has ever worked, and showing another warehouse's payouts under this one
+// misrepresents the shift. Rows recorded before transactions carried a
+// user/warehouse fall outside any scoped list.
 //
 // The list is also capped by the retention setting (AIGT HDR Settings › POS
 // App): after each sync, synced rows beyond it are pruned from the device
 // (src/repositories/maintenance.ts). Pending and needs-review rows never are.
 export function useTransactions(
 	filter: 'all' | SyncStatus = 'all',
-	warehouse?: string,
+	scope: WorkScope,
 ): PosTransaction[] {
 	const statusFilter = filter === 'all' ? undefined : eq(posTransactions.status, filter);
-	const scope = warehouse ? eq(posTransactions.warehouse, warehouse) : undefined;
 	const { data } = useLiveQuery(
 		db
 			.select()
 			.from(posTransactions)
-			.where(statusFilter && scope ? and(statusFilter, scope) : (statusFilter ?? scope))
+			.where(and(statusFilter, scoped(scope)))
 			.orderBy(desc(posTransactions.createdAt)),
-		[filter, warehouse],
+		[filter, scope.user, scope.warehouse],
 	);
 	return (data ?? []).map(toTransaction);
 }
@@ -321,18 +338,23 @@ export function useTransaction(id?: string): PosTransaction | undefined {
 	return data?.[0] ? toTransaction(data[0]) : undefined;
 }
 
-// Pending/conflict counts for pills, banners, and the profile screen.
-export function useSyncCounts(): { pending: number; conflicts: number } {
+// Pending/conflict counts for pills, banners, and the profile screen — same
+// scope as useTransactions, so a banner never counts rows its list can't show.
+export function useSyncCounts(scope: WorkScope): { pending: number; conflicts: number } {
 	const { data } = useLiveQuery(
 		db
 			.select({ status: posTransactions.status })
 			.from(posTransactions)
 			.where(
-				or(
-					eq(posTransactions.status, 'pending'),
-					eq(posTransactions.status, 'conflict'),
+				and(
+					or(
+						eq(posTransactions.status, 'pending'),
+						eq(posTransactions.status, 'conflict'),
+					),
+					scoped(scope),
 				),
 			),
+		[scope.user, scope.warehouse],
 	);
 	const rows = data ?? [];
 	return {
@@ -358,10 +380,14 @@ export function usePosProfiles(): PosProfile[] {
 	return data ?? [];
 }
 
-// The one session currently open (at most one at a time — enforced on open).
-export function useOpenPosSession(): PosSession | undefined {
+// The signed-in user's open session (at most one at a time — enforced on open).
+export function useOpenPosSession(user: string | null | undefined): PosSession | undefined {
 	const { data } = useLiveQuery(
-		db.select().from(posSessions).where(eq(posSessions.status, 'open')),
+		db
+			.select()
+			.from(posSessions)
+			.where(and(eq(posSessions.status, 'open'), eq(posSessions.user, user ?? NONE))),
+		[user],
 	);
 	return data?.[0] ? toPosSession(data[0]) : undefined;
 }
@@ -378,9 +404,14 @@ export function posSessionServerName(sessionId: string): string | undefined {
 	return row?.serverName ?? undefined;
 }
 
-export function usePosSessions(): PosSession[] {
+export function usePosSessions(user: string | null | undefined): PosSession[] {
 	const { data } = useLiveQuery(
-		db.select().from(posSessions).orderBy(desc(posSessions.openedAt)),
+		db
+			.select()
+			.from(posSessions)
+			.where(eq(posSessions.user, user ?? NONE))
+			.orderBy(desc(posSessions.openedAt)),
+		[user],
 	);
 	return (data ?? []).map(toPosSession);
 }

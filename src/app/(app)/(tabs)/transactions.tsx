@@ -1,4 +1,5 @@
 import { Screen } from '@/components/domain/Screen';
+import { useWorkScope } from '@/hooks/scope';
 import { TransactionRow } from '@/components/domain/TransactionRow';
 import { EmptyState } from '@/components/domain/widgets';
 import { Card } from '@/components/ui/card';
@@ -26,10 +27,11 @@ const FILTERS: { key: Filter; label: string }[] = [
 export default function Transactions() {
 	const router = useRouter();
 	const [filter, setFilter] = React.useState<Filter>('all');
-	// Scoped to the profile being worked — another warehouse's payouts under this
-	// one would misstate the shift.
+	// Scoped to the signed-in user and the profile being worked — another user's
+	// work, or another warehouse's payouts, would misstate the shift.
 	const profile = useActivePosProfile();
-	const list = useTransactions(filter, profile?.warehouse);
+	const scope = useWorkScope();
+	const list = useTransactions(filter, scope);
 
 	return (
 		<Screen edges={['top']} scroll={false}>
