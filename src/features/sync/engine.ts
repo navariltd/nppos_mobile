@@ -34,6 +34,10 @@ export interface SyncResult {
 	pushed: number;
 	conflicts: number;
 	pulled: number;
+	// Outbox id → the server's reason, for every item refused in THIS run. Items
+	// with no pos_transactions row (a session opening) have nowhere else to keep
+	// it, and the caller waiting on them needs to tell the agent why.
+	refused: Record<string, string>;
 }
 
 type StateWithSync = { sync: SyncState };
@@ -61,6 +65,7 @@ export const syncNow = createAsyncThunk<SyncResult, SyncOptions | void>(
 			const api = getApi();
 			let pushed = 0;
 			let conflicts = 0;
+			const refused: Record<string, string> = {};
 
 			// ---- push (outbox FIFO) ----
 			flush: while (true) {
@@ -74,6 +79,7 @@ export const syncNow = createAsyncThunk<SyncResult, SyncOptions | void>(
 							pushed++;
 						} else {
 							markPushRejected(item, result.outcome, result.reason, result.ledger);
+							refused[item.id] = result.reason;
 							conflicts++;
 						}
 					} catch (e) {
@@ -95,7 +101,7 @@ export const syncNow = createAsyncThunk<SyncResult, SyncOptions | void>(
 			pruneSyncedTransactions(getSettings().transactionRetention);
 
 			dispatch(syncFinished({ at: new Date().toISOString() }));
-			return { pushed, conflicts, pulled };
+			return { pushed, conflicts, pulled, refused };
 		} catch (e) {
 			dispatch(syncFailed({ error: errorMessage(e) }));
 			throw e;

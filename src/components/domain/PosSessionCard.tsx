@@ -67,8 +67,10 @@ export function PosSessionCard() {
 
 		// Push the opening immediately: everything issued during the shift
 		// references the POS Opening Entry by its server name.
+		let refusal: string | undefined;
 		try {
-			await flushNow(dispatch);
+			const r = await flushNow(dispatch);
+			refusal = r.refused[result.transactionId];
 		} catch {
 			// fall through to the server-name check below
 		}
@@ -79,7 +81,11 @@ export function PosSessionCard() {
 			discardUnsyncedPosSession(result.transactionId);
 			Alert.alert(
 				'Session not opened',
-				'The POS Opening Entry did not reach the server, so the shift was not started. Check your connection and try again.',
+				refusal
+					? // The server refused it — e.g. another agent still has this
+						// POS profile open. Say so; "check your connection" would be wrong.
+						`The server refused the POS Opening Entry: ${refusal}`
+					: 'The POS Opening Entry did not reach the server, so the shift was not started. Check your connection and try again.',
 			);
 		}
 	};
