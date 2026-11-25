@@ -8,6 +8,7 @@
 // server-side before the first redemption references it.
 
 import { useCurrentUser } from '@/hooks/scope';
+import { useSession } from '@/hooks/session';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -41,6 +42,7 @@ export function PosSessionCard() {
 	const router = useRouter();
 	const dispatch = useAppDispatch();
 	const profile = useActivePosProfile();
+	const { agent } = useSession();
 	const session = useOpenPosSession(useCurrentUser());
 	const preflight = useShiftPreflight();
 	const [dialogOpen, setDialogOpen] = React.useState(false);
@@ -59,7 +61,7 @@ export function PosSessionCard() {
 			return;
 		}
 
-		const result = openPosSession(profile.id);
+		const result = openPosSession(profile.id, agent?.id);
 		if (!result.ok) {
 			Alert.alert('Could not open session', result.reason);
 			return;

@@ -23,9 +23,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 export default function SelectProfile() {
 	const router = useRouter();
 	const dispatch = useAppDispatch();
-	const { isAuthenticated, name, role, activePosProfileId, selectPosProfile } = useSession();
+	const { isAuthenticated, name, role, agent, activePosProfileId, selectPosProfile } = useSession();
 	const guardedSignOut = useGuardedSignOut();
-	const profiles = usePosProfiles();
+	const profiles = usePosProfiles(agent?.id);
 	const isSyncing = useAppSelector((s) => s.sync.isSyncing);
 	const isOnline = useAppSelector(selectIsOnline);
 	// What was active when the screen opened (null on first login, the current
@@ -36,7 +36,9 @@ export default function SelectProfile() {
 		return <Redirect href="/login" />;
 	}
 	// Only admins switch profiles once one is chosen — non-admins pick once at login.
-	if (initialId && role !== 'admin') {
+	// (Not when the active profile was just cleared because it isn't theirs:
+	// then they must pick again.)
+	if (initialId && activePosProfileId && role !== 'admin') {
 		return <Redirect href="/" />;
 	}
 	// Declarative exit: the store change itself drives navigation, so choosing

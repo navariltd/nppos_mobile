@@ -108,6 +108,11 @@ const authSlice = createSlice({
 		posProfileSelected: (state, action: PayloadAction<string>) => {
 			state.activePosProfileId = action.payload;
 		},
+		// The active profile isn't this agent's (left over from another user on
+		// the device) — back to the picker.
+		posProfileCleared: (state) => {
+			state.activePosProfileId = null;
+		},
 		// Boot reconcile (AuthBootstrap): persisted state said authenticated but
 		// the keystore has no token — treat as signed out.
 		sessionInvalidated: () => initialState,
@@ -138,5 +143,5 @@ const authSlice = createSlice({
 	},
 });
 
-export const { roleSet, posProfileSelected, sessionInvalidated } = authSlice.actions;
+export const { roleSet, posProfileSelected, sessionInvalidated, posProfileCleared } = authSlice.actions;
 export default authSlice.reducer;

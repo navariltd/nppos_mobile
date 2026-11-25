@@ -375,8 +375,20 @@ export function usePosProfile(id?: string): PosProfile | undefined {
 
 // All profiles on this device — the post-login "choose your POS profile"
 // screen. Real builds only ever pull profiles applicable to the logged-in user.
-export function usePosProfiles(): PosProfile[] {
-	const { data } = useLiveQuery(db.select().from(posProfiles).orderBy(posProfiles.name));
+//
+// Only the signed-in agent's: login/pull stamp each profile with the agent it
+// was returned for. A profile can linger on the device after another user
+// signs in (replacePosProfiles keeps any profile a local session still points
+// at), and it must never become selectable for someone not assigned to it.
+export function usePosProfiles(agentId: string | null | undefined): PosProfile[] {
+	const { data } = useLiveQuery(
+		db
+			.select()
+			.from(posProfiles)
+			.where(eq(posProfiles.agentId, agentId ?? NONE))
+			.orderBy(posProfiles.name),
+		[agentId],
+	);
 	return data ?? [];
 }
 

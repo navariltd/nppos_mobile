@@ -426,11 +426,18 @@ export function returnStock(warehouse: string, hamperId: string, qty: number): M
 // document, never shown to or asked of the agent.
 const OPENING_FLOAT = 0;
 
-export function openPosSession(posProfileId: string): MutationResult {
+// `agentId` is the signed-in agent (auth agent.id — the same value login and
+// pull stamp on the profiles they return for that user).
+export function openPosSession(posProfileId: string, agentId: string | null | undefined): MutationResult {
 	if (getOpenSession()) return { ok: false, reason: 'A session is already open.' };
 
 	const profile = db.select().from(posProfiles).where(eq(posProfiles.id, posProfileId)).get();
 	if (!profile) return { ok: false, reason: 'POS profile not found on this device.' };
+	// A profile left on the device by another user is not this agent's to work
+	// (the server refuses the opening too).
+	if (!agentId || profile.agentId !== agentId) {
+		return { ok: false, reason: `You are not assigned to POS profile ${profile.name}.` };
+	}
 
 	const id = uuid();
 	db.transaction((tx) => {
