@@ -6,7 +6,9 @@ export type Role = 'agent' | 'admin';
 
 export type TransactionType = 'goods_issue' | 'cash_payment' | 'stock_return';
 
-export type SyncStatus = 'pending' | 'synced' | 'conflict';
+// conflict = "needs review" (parked in the desk's POS Sync Ledger);
+// rejected = an admin rejected it there (final — nothing was posted).
+export type SyncStatus = 'pending' | 'synced' | 'conflict' | 'rejected';
 
 export type VoucherStatus = 'active' | 'partially_redeemed' | 'redeemed' | 'expired';
 
@@ -170,7 +172,14 @@ export interface PosTransaction {
 	project: string; // accounting ref (name string)
 	assignmentId?: string;
 	status: SyncStatus;
-	conflictReason?: string; // server rejection message (status 'conflict')
+	conflictReason?: string; // why it could not post (status 'conflict')
 	createdAt: string;
 	serverName?: string;
+	user?: string; // login email of whoever recorded it
+	ledgerName?: string; // POS Sync Ledger row in the desk
+	// Admin decision from the ledger — Retry / Force Post / Reject.
+	resolution?: string;
+	resolutionNote?: string;
+	resolvedBy?: string;
+	resolvedAt?: string;
 }

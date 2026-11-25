@@ -18,6 +18,7 @@ export interface PosSettings {
 	showHamperContents: boolean;
 	showBeneficiaryDetails: boolean;
 	requireCloseOutPhoto: boolean;
+	historyDays: number; // how far back a full (first) pull reaches
 }
 
 export const DEFAULT_SETTINGS: PosSettings = {
@@ -29,6 +30,7 @@ export const DEFAULT_SETTINGS: PosSettings = {
 	showHamperContents: true,
 	showBeneficiaryDetails: true,
 	requireCloseOutPhoto: false,
+	historyDays: 30,
 };
 
 // Rebuild a typed settings object from key/value rows; anything missing or

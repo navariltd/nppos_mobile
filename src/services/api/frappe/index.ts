@@ -4,7 +4,7 @@
 //
 //   POST /api/method/nppos.sync_api.login       { email, password }
 //   POST /api/method/nppos.sync_api.sync_push   { client_ref, created_at, payload }
-//   POST /api/method/nppos.sync_api.sync_pull   { cursors }
+//   POST /api/method/nppos.sync_api.sync_pull   { cursors, client: 'mobile' }
 //
 // Wire format is snake_case (natural for Frappe/Python); this adapter is the
 // only place that maps it to the app's camelCase domain types. Auth after
@@ -15,6 +15,7 @@
 
 import { DEFAULT_SETTINGS } from '@/lib/pos-settings';
 import type {
+	LedgerTransaction,
 	ApiAdapter,
 	LoginRequest,
 	LoginResponse,
@@ -118,8 +119,29 @@ interface FrappePull {
 		show_hamper_contents: number;
 		show_beneficiary_details: number;
 		require_close_out_photo: number;
+		history_days?: number; // older backends don't send it
 	};
-	cursors: Record<PullCollection, string>;
+	// POS Sync Ledger rows for this user (absent on older backends).
+	transactions?: {
+		client_ref: string;
+		kind: LedgerTransaction['kind'];
+		status: LedgerTransaction['status'];
+		reason?: string | null;
+		resolution?: string | null;
+		resolution_note?: string | null;
+		resolved_by?: string | null;
+		resolved_at?: string | null;
+		server_name?: string | null;
+		voucher_no?: string | null;
+		hamper?: string | null;
+		warehouse?: string | null;
+		project?: string | null;
+		amount?: number | null;
+		qty?: number | null;
+		created_at?: string | null;
+		pos_opening_entry?: string | null;
+	}[];
+	cursors: Partial<Record<PullCollection, string>>;
 }
 
 export class FrappeAdapter implements ApiAdapter {
@@ -212,9 +234,10 @@ export class FrappeAdapter implements ApiAdapter {
 
 	async push(item: PushItem): Promise<PushResult> {
 		const m = await this.call<{
-			status: 'accepted' | 'rejected';
+			status: 'accepted' | 'needs_review' | 'rejected';
 			server_name?: string;
 			reason?: string;
+			ledger?: string;
 			related?: Record<string, string>;
 		}>('nppos.sync_api.sync_push', {
 			client_ref: item.id, // idempotency key (custom_client_ref)
@@ -228,11 +251,25 @@ export class FrappeAdapter implements ApiAdapter {
 				relatedNames: m.related,
 			};
 		}
-		return { outcome: 'rejected', reason: m.reason ?? 'Rejected by the server.' };
+		if (m.status === 'rejected') {
+			return { outcome: 'rejected', reason: m.reason ?? 'Rejected by an admin.', ledger: m.ledger };
+		}
+		// 'needs_review' — and anything an older backend calls a refusal: it is
+		// parked for an admin either way, never retried by the device.
+		return {
+			outcome: 'needs_review',
+			reason: m.reason ?? 'Waiting for admin review.',
+			ledger: m.ledger,
+		};
 	}
 
 	async pull(cursors: PullCursors): Promise<PullResponse> {
-		const m = await this.call<FrappePull>('nppos.sync_api.sync_pull', { cursors });
+		// client: 'mobile' — the server leaves out the full voucher document the
+		// web POS needs and this app never reads (the bulk of the payload).
+		const m = await this.call<FrappePull>('nppos.sync_api.sync_pull', {
+			cursors,
+			client: 'mobile',
+		});
 		return {
 			assignments: m.assignments.map((a) => ({
 				id: a.id,
@@ -323,8 +360,28 @@ export class FrappeAdapter implements ApiAdapter {
 						showHamperContents: !!m.pos_settings.show_hamper_contents,
 						showBeneficiaryDetails: !!m.pos_settings.show_beneficiary_details,
 						requireCloseOutPhoto: !!m.pos_settings.require_close_out_photo,
+						historyDays: m.pos_settings.history_days ?? DEFAULT_SETTINGS.historyDays,
 					}
 				: { ...DEFAULT_SETTINGS },
+			transactions: (m.transactions ?? []).map((t) => ({
+				clientRef: t.client_ref,
+				kind: t.kind,
+				status: t.status,
+				reason: t.reason || undefined,
+				resolution: t.resolution || undefined,
+				resolutionNote: t.resolution_note || undefined,
+				resolvedBy: t.resolved_by || undefined,
+				resolvedAt: t.resolved_at || undefined,
+				serverName: t.server_name || undefined,
+				voucherNo: t.voucher_no || undefined,
+				hamper: t.hamper || undefined,
+				warehouse: t.warehouse || undefined,
+				project: t.project || undefined,
+				amount: t.amount ?? undefined,
+				qty: t.qty ?? undefined,
+				createdAt: t.created_at || undefined,
+				posOpeningEntry: t.pos_opening_entry || undefined,
+			})),
 			cursors: m.cursors,
 		};
 	}

@@ -6,18 +6,28 @@ const SYNC_LABEL: Record<SyncStatus, string> = {
 	pending: 'Pending sync',
 	synced: 'Synced',
 	conflict: 'Needs review',
+	rejected: 'Rejected by admin',
 };
 
 // Badge is monochrome by design; we tint via className to signal state.
 export function SyncBadge({ status }: { status: SyncStatus }) {
+	// rejected is settled (nothing posted, nothing to do) → muted, not alarming.
 	const cls =
 		status === 'synced'
 			? 'bg-success/10'
 			: status === 'pending'
 				? 'bg-warning/15'
-				: 'bg-destructive/10';
+				: status === 'rejected'
+					? 'bg-muted'
+					: 'bg-destructive/10';
 	const textCls =
-		status === 'synced' ? 'text-success' : status === 'pending' ? 'text-warning' : 'text-destructive';
+		status === 'synced'
+			? 'text-success'
+			: status === 'pending'
+				? 'text-warning'
+				: status === 'rejected'
+					? 'text-muted-foreground'
+					: 'text-destructive';
 	return (
 		<Badge className={cls}>
 			<Text className={textCls}>{SYNC_LABEL[status]}</Text>

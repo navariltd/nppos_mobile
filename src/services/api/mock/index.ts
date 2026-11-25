@@ -81,7 +81,8 @@ export class MockAdapter implements ApiAdapter {
 		await this.simulateTransport();
 		const { kind } = item.payload;
 		if (Math.random() < this.rejectRate) {
-			return { outcome: 'rejected', reason: REJECT_REASON[kind] };
+			// The real backend parks a refusal in the POS Sync Ledger for review.
+			return { outcome: 'needs_review', reason: REJECT_REASON[kind] };
 		}
 		const result: PushResult = {
 			outcome: 'accepted',
@@ -108,6 +109,7 @@ export class MockAdapter implements ApiAdapter {
 			agentStock: [],
 			posProfiles: [],
 			beneficiaries: [],
+			transactions: [],
 			settings: { ...DEFAULT_SETTINGS },
 			cursors: {
 				assignments: now,

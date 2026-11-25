@@ -93,8 +93,11 @@ export interface PushItem {
 	attempt: number;
 }
 
-// A push either lands, or the server *validly refuses* it (→ local status
-// 'conflict', admin resolves online — never retried, never deleted).
+// Every push is recorded in the desk's POS Sync Ledger before it is attempted.
+// It either lands, or it is parked there for an admin (→ local 'conflict',
+// "needs review" — never retried by the device, never deleted), or an admin
+// already rejected it (→ local 'rejected', final). The admin's later decision
+// arrives on the pull (PullResponse.transactions).
 // Transport/server failures are NOT results: adapters throw ApiError and the
 // sync engine backs off and retries.
 export type PushResult =
@@ -108,10 +111,17 @@ export type PushResult =
 			relatedNames?: Record<string, string>;
 	  }
 	| {
-			outcome: 'rejected';
-			// Human-readable validation failure (double-spent voucher, revoked
-			// entitlement…). Shown on the conflict row in "Needs review".
+			outcome: 'needs_review';
+			// Why it could not post (double-spent voucher, expired voucher, stock
+			// short…). Shown on the row in "Needs review".
 			reason: string;
+			ledger?: string; // POS Sync Ledger row name
+	  }
+	| {
+			outcome: 'rejected';
+			// The admin's reason — final, nothing was posted.
+			reason: string;
+			ledger?: string;
 	  };
 
 export class ApiError extends Error {
@@ -139,7 +149,32 @@ export type PullCollection =
 	| 'hampers'
 	| 'agentStock'
 	| 'posProfiles'
-	| 'beneficiaries';
+	| 'beneficiaries'
+	| 'transactions'
+	// Not a timestamp: the comma-joined warehouse set the last pull covered.
+	| 'warehouses';
+
+// One POS Sync Ledger row for this user — the server's verdict on a
+// transaction the device pushed (or recorded on another device / before a wipe).
+export interface LedgerTransaction {
+	clientRef: string; // == pos_transactions.id
+	kind: 'cash_payment' | 'goods_issue' | 'stock_return' | 'stock_damaged';
+	status: 'pending' | 'synced' | 'needs_review' | 'rejected';
+	reason?: string;
+	resolution?: string;
+	resolutionNote?: string;
+	resolvedBy?: string;
+	resolvedAt?: string;
+	serverName?: string;
+	voucherNo?: string;
+	hamper?: string;
+	warehouse?: string;
+	project?: string;
+	amount?: number;
+	qty?: number;
+	createdAt?: string;
+	posOpeningEntry?: string;
+}
 
 export interface PullResponse {
 	assignments: Assignment[];
@@ -149,9 +184,12 @@ export interface PullResponse {
 	agentStock: AgentStockRow[];
 	posProfiles: PosProfile[];
 	beneficiaries: Beneficiary[]; // only the parties on the agent's vouchers
+	// This user's ledger rows changed since the cursor — how an admin's Retry /
+	// Force post / Reject reaches the device. Also rebuilds history after a wipe.
+	transactions: LedgerTransaction[];
 	settings: PosSettings;
 	// New cursor per collection, persisted to sync_meta after upsert.
-	cursors: Record<PullCollection, string>;
+	cursors: Partial<Record<PullCollection, string>>;
 }
 
 // ---- the adapter ------------------------------------------------------------

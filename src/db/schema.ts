@@ -184,6 +184,10 @@ export const posSessions = sqliteTable(
 		closingPhotoUri: text('closing_photo_uri'),
 		openingServerName: text('opening_server_name'), // POS Opening Entry name
 		closingServerName: text('closing_server_name'), // POS Closing Entry name
+		// Who worked the shift (login email). Sessions are user-owned: they
+		// survive a different user signing in on the device, filtered out of
+		// that user's view. See resetReferenceData.
+		user: text('user'),
 	},
 	(t) => [index('pos_sessions_status_idx').on(t.status)],
 );
@@ -194,9 +198,10 @@ export const voucherRedemptions = sqliteTable(
 	'voucher_redemptions',
 	{
 		id: text('id').primaryKey(), // client UUID
-		voucherId: text('voucher_id')
-			.notNull()
-			.references(() => vouchers.id),
+		// Plain text, deliberately NOT a foreign key: vouchers are warehouse
+		// reference data wiped when a different user signs in, while redemptions
+		// are user-owned history that must survive it.
+		voucherId: text('voucher_id').notNull(),
 		transactionId: text('transaction_id').notNull(), // pos_transactions.id
 		posSessionId: text('pos_session_id'), // local session id
 		// The POS Opening Entry's server name, stamped at redemption time. This is
@@ -208,6 +213,7 @@ export const voucherRedemptions = sqliteTable(
 		amount: real('amount'),
 		qty: real('qty'),
 		redeemedAt: text('redeemed_at').notNull(),
+		user: text('user'), // who redeemed it (login email) — user-owned row
 	},
 	(t) => [index('voucher_redemptions_voucher_idx').on(t.voucherId)],
 );
@@ -233,15 +239,30 @@ export const posTransactions = sqliteTable(
 		warehouse: text('warehouse'),
 		project: text('project').notNull(), // accounting ref (name string)
 		assignmentId: text('assignment_id'),
-		status: text('status', { enum: ['pending', 'synced', 'conflict'] })
+		// pending → synced | conflict ("needs review": parked in the desk's POS
+		// Sync Ledger) → synced (admin Retry / Force post) | rejected (admin
+		// Reject, final). The ledger outcome arrives on the pull.
+		status: text('status', { enum: ['pending', 'synced', 'conflict', 'rejected'] })
 			.notNull()
 			.default('pending'),
 		conflictReason: text('conflict_reason'),
 		createdAt: text('created_at').notNull(),
 		syncedAt: text('synced_at'),
 		serverName: text('server_name'),
+		// Who recorded it (login email). Every list and count is scoped by it, so
+		// one user's work — or needs-review rows — never shows for another.
+		user: text('user'),
+		ledgerName: text('ledger_name'), // POS Sync Ledger row (== id once pushed)
+		// The admin's decision from the ledger (Retry / Force Post / Reject).
+		resolution: text('resolution'),
+		resolutionNote: text('resolution_note'),
+		resolvedBy: text('resolved_by'),
+		resolvedAt: text('resolved_at'),
 	},
-	(t) => [index('pos_transactions_status_idx').on(t.status)],
+	(t) => [
+		index('pos_transactions_status_idx').on(t.status),
+		index('pos_transactions_user_idx').on(t.user),
+	],
 );
 
 // One row per pending push; written in the same transaction as the domain row.
@@ -254,7 +275,10 @@ export const outbox = sqliteTable('outbox', {
 	createdAt: text('created_at').notNull(),
 });
 
-// Per-collection pull cursors for delta sync (unused until sync lands).
+// Per-collection pull cursors for delta sync, plus two non-cursor rows:
+// `warehouses` (the set the last pull covered — the server sends a full voucher
+// set for any warehouse missing from it) and `__user` (who the reference data
+// on the device belongs to; a different user signing in resets it).
 export const syncMeta = sqliteTable('sync_meta', {
 	collection: text('collection').primaryKey(),
 	cursor: text('cursor'),
