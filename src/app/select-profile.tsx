@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { useGuardedSignOut } from '@/features/auth/use-sign-out';
 import { syncNow } from '@/features/sync/engine';
 import { selectIsOnline } from '@/features/sync/slice';
 import { useSession } from '@/hooks/session';
@@ -15,15 +16,15 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { Redirect, useRouter } from 'expo-router';
 import { ChevronRight, RefreshCw, Store } from 'lucide-react-native';
 import * as React from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function SelectProfile() {
 	const router = useRouter();
 	const dispatch = useAppDispatch();
-	const { isAuthenticated, name, role, activePosProfileId, selectPosProfile, signOut } =
-		useSession();
+	const { isAuthenticated, name, role, activePosProfileId, selectPosProfile } = useSession();
+	const guardedSignOut = useGuardedSignOut();
 	const profiles = usePosProfiles();
 	const isSyncing = useAppSelector((s) => s.sync.isSyncing);
 	const isOnline = useAppSelector(selectIsOnline);
@@ -51,6 +52,11 @@ export default function SelectProfile() {
 			return;
 		}
 		selectPosProfile(id);
+	};
+
+	const handleSignOut = async () => {
+		const result = await guardedSignOut.run();
+		if (!result.ok) Alert.alert(result.title, result.reason);
 	};
 
 	const isEmpty = profiles.length === 0;
@@ -128,11 +134,22 @@ export default function SelectProfile() {
 				) : null}
 			</View>
 
-			{/* Always give an escape from this screen — the only other exit is
-			    picking a profile, which a user without one cannot do. */}
+			{/* Escape from this screen for a user without a profile — but through
+			    the same sync gate as every other sign-out: nothing queued may be
+			    left behind for the next user to push under their token. */}
 			<View className="border-border/60 border-t px-6 py-4">
-				<Button variant="ghost" onPress={signOut}>
-					<Text className="text-muted-foreground">Sign out</Text>
+				<Button
+					variant="ghost"
+					onPress={handleSignOut}
+					disabled={!isOnline || guardedSignOut.isRunning}
+				>
+					<Text className="text-muted-foreground">
+						{guardedSignOut.isRunning
+							? 'Syncing…'
+							: isOnline
+								? 'Sign out'
+								: 'Connect to sync before signing out'}
+					</Text>
 				</Button>
 			</View>
 		</SafeAreaView>

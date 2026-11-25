@@ -5,7 +5,7 @@
 // login are upserted into SQLite (reference data), not kept here.
 
 import { selectIsOnline, type SyncState } from '@/features/sync/slice';
-import { replacePosProfiles } from '@/repositories';
+import { pendingOutboxSummary, replacePosProfiles } from '@/repositories';
 import { getApi } from '@/services/api';
 import type { Agent, Role } from '@/types/domain';
 import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit';
@@ -59,10 +59,19 @@ export const signIn = createAsyncThunk(
 
 // Full-system sign-out: drop the keystore token and the adapter's copy, then
 // reset session state (active profile included).
-export const logout = createAsyncThunk('auth/logout', async () => {
-	await clearToken();
-	getApi().setToken?.(null);
-});
+//
+// Backstop for the sync gate: refuses (no actions dispatched, session kept)
+// while anything is still queued in the outbox. Screens go through
+// useGuardedSignOut, which explains WHY; this only guarantees no code path —
+// present or future — can drop a session with unsynced work behind it.
+export const logout = createAsyncThunk(
+	'auth/logout',
+	async () => {
+		await clearToken();
+		getApi().setToken?.(null);
+	},
+	{ condition: () => pendingOutboxSummary().count === 0 },
+);
 
 const authSlice = createSlice({
 	name: 'auth',

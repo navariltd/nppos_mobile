@@ -30,6 +30,7 @@ import { formatTime } from '@/lib/format';
 import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
 import {
 	closePosSession,
+	pendingOutboxSummary,
 	useAgentStock,
 	useOpenPosSession,
 	useSessionTransactions,
@@ -97,17 +98,25 @@ export default function Reconciliation() {
 			return;
 		}
 
+		// The engine swallows a failed push (backs it off, still resolves), so
+		// read the outbox rather than trusting the flush not to throw.
+		let r: Awaited<ReturnType<typeof flushNow>> | null = null;
 		try {
-			const r = await flushNow(dispatch);
+			r = await flushNow(dispatch);
+		} catch {
+			// reported through the outbox check below
+		}
+		const { count, lastError } = pendingOutboxSummary();
+		if (r && count === 0) {
 			Alert.alert(
 				'Session closed & synced',
 				`POS Closing Entry submitted — ${r.pushed} item${r.pushed === 1 ? '' : 's'} synced${r.conflicts ? `, ${r.conflicts} need review` : ''}.`,
 				[{ text: 'Done', onPress: () => router.back() }],
 			);
-		} catch {
+		} else {
 			Alert.alert(
 				'Session closed locally',
-				'The POS Closing Entry did not reach the server — it stays queued and retries automatically.',
+				`The POS Closing Entry has not reached the server yet${lastError ? ` — ${lastError}` : ''}. It stays queued and retries automatically; you cannot sign out until it syncs.`,
 				[{ text: 'Done', onPress: () => router.back() }],
 			);
 		}

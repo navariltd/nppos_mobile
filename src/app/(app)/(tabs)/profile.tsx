@@ -22,13 +22,8 @@ import { Text } from '@/components/ui/text';
 import { useOnline } from '@/hooks/online';
 import { useActivePosProfile } from '@/hooks/pos-profile';
 import { syncNow } from '@/features/sync/engine';
-import { flushNow, useShiftPreflight } from '@/features/sync/preflight';
-import {
-	closePosSession,
-	useOpenPosSession,
-	useSettings,
-	useSyncCounts,
-} from '@/repositories';
+import { useGuardedSignOut } from '@/features/auth/use-sign-out';
+import { useOpenPosSession, useSyncCounts } from '@/repositories';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { useSession } from '@/hooks/session';
 import { useThemeMode, type ThemeMode } from '@/hooks/theme';
@@ -88,14 +83,13 @@ export default function Profile() {
 	const router = useRouter();
 	const dispatch = useAppDispatch();
 	const isSyncing = useAppSelector((s) => s.sync.isSyncing);
-	const { name, role, agent, setRole, signOut } = useSession();
+	const { name, role, agent, setRole } = useSession();
 	const { isOnline, deviceOnline, forcedOffline, setForcedOffline } = useOnline();
 	const { mode, scheme, setMode } = useThemeMode();
 	const { pending, conflicts } = useSyncCounts();
 	const openSession = useOpenPosSession();
 	const posProfile = useActivePosProfile();
-	const preflight = useShiftPreflight();
-	const settings = useSettings();
+	const guardedSignOut = useGuardedSignOut();
 
 	// Only admins may switch profiles; a collection-center user stays on the
 	// profile they picked at login until they sign out.
@@ -114,46 +108,14 @@ export default function Profile() {
 		router.push('/select-profile');
 	};
 
-	// Sign-out is ONLINE-ONLY and leaves nothing behind: sync everything first,
-	// then auto-close any open shift and push that too. A device that signs out
-	// with work still queued would strand it until someone logs back in on this
-	// same device.
+	// Sign-out is ONLINE-ONLY and leaves nothing behind — see useGuardedSignOut
+	// (sync, auto-close any open shift, push it, refuse while anything is queued).
 	const handleSignOut = async () => {
-		// Setting 7: sign-out auto-closes an open shift, and that path has no
-		// photo to attach — so where the photo is mandatory, the agent has to
-		// close properly from reconciliation first.
-		if (openSession && settings.requireCloseOutPhoto) {
-			Alert.alert(
-				'Close your session first',
-				'A close-out photo is required. Close the session from End-of-Day Reconciliation, then sign out.',
-			);
+		const result = await guardedSignOut.run();
+		if (!result.ok) {
+			Alert.alert(result.title, result.reason);
 			return;
 		}
-
-		const pre = await preflight.run('sign out');
-		if (!pre.ok) {
-			Alert.alert('Cannot sign out', pre.reason);
-			return;
-		}
-
-		if (openSession) {
-			const result = closePosSession();
-			if (!result.ok) {
-				Alert.alert('Cannot sign out', result.reason);
-				return;
-			}
-			try {
-				await flushNow(dispatch);
-			} catch {
-				Alert.alert(
-					'Cannot sign out',
-					'Your shift was closed but the POS Closing Entry has not reached the server. Stay signed in until it syncs.',
-				);
-				return;
-			}
-		}
-
-		signOut();
 		router.replace('/login');
 	};
 
@@ -311,10 +273,10 @@ export default function Profile() {
 			<Animated.View entering={FadeInDown.duration(300).delay(280)} className="gap-4">
 				<AlertDialog>
 					<AlertDialogTrigger asChild>
-						<Button variant="outline" disabled={!isOnline || preflight.isRunning}>
+						<Button variant="outline" disabled={!isOnline || guardedSignOut.isRunning}>
 							<Icon as={isOnline ? LogOut : CloudOff} size={18} className="text-destructive" />
 							<Text className="text-destructive">
-								{preflight.isRunning ? 'Syncing…' : isOnline ? 'Sign out' : 'Sign out (offline)'}
+								{guardedSignOut.isRunning ? 'Syncing…' : isOnline ? 'Sign out' : 'Sign out (offline)'}
 							</Text>
 						</Button>
 					</AlertDialogTrigger>
